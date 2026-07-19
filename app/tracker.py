@@ -10482,7 +10482,7 @@ def load_config() -> Config:
     raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8")) if config_exists else {}
     config = Config(
         recent_url=raw.get("recent_url", "https://live.nicovideo.jp/recent?tab=common"),
-        tracker_fetch_method=str(raw.get("tracker_fetch_method", "selenium")),
+        tracker_fetch_method=str(raw.get("tracker_fetch_method", "api")),
         poll_seconds=int(raw.get("poll_seconds", 60)),
         min_elapsed_minutes=float(raw.get("min_elapsed_minutes", 25)),
         target_user_ids=list(raw.get("target_user_ids", [])),
@@ -11238,7 +11238,7 @@ def _int_or_none(value: Any) -> int | None:
 
 
 def fetch_recent_programs(config: Config) -> list[dict[str, Any]]:
-    method = str(config.tracker_fetch_method or "selenium").strip().lower()
+    method = str(config.tracker_fetch_method or "api").strip().lower()
     if method == "api":
         return fetch_recent_programs_api(config)
     if method == "selenium":

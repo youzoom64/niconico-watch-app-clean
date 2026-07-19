@@ -5967,7 +5967,7 @@ class SettingsTab(QWidget):
         tracker.save_config_values(
             {
                 "slnico_live_rec_exe": path,
-                "tracker_fetch_method": str(self.tracker_fetch_method.currentData() or "selenium"),
+                "tracker_fetch_method": str(self.tracker_fetch_method.currentData() or "api"),
                 "selenium_headless": self.selenium_headless.isChecked(),
                 "recording_auto_restart": self.recording_auto_restart.isChecked(),
                 "postprocess_console_log_enabled": self.postprocess_console_log_enabled.isChecked(),
