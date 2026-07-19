@@ -10577,7 +10577,7 @@ def load_config() -> Config:
         archive_upload_cli_path=str(
             raw.get(
                 "archive_upload_cli_path",
-                r"J:\tools\upload-targets\upload_targets_cli.py",
+                os.environ.get("NICONICO_UPLOAD_TARGETS_CLI", ""),
             )
         ),
         archive_upload_http_verify=bool(raw.get("archive_upload_http_verify", True)),

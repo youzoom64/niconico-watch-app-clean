@@ -7,7 +7,7 @@ from pathlib import Path
 from openai import APIStatusError, OpenAI
 
 
-DEFAULT_ENV_FILE = Path(r"J:\tools\api-scripts\runtime\.env")
+DEFAULT_ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
 
 
 def talk_to_openai(api_key: str, *, model: str = "gpt-5.6") -> str:

@@ -18,9 +18,7 @@ from archive_db import load_broadcast_data
 from tracker import run_legacy_archiver_steps
 
 
-DEFAULT_BROADCAST_ROOT = Path(
-    r"J:\utility\Niconico\target\platform\niconico\39532023\broadcast"
-)
+DEFAULT_BROADCAST_ROOT = ROOT.parent / "target" / "platform" / "niconico"
 
 
 def emit(event: str, **fields: object) -> None:

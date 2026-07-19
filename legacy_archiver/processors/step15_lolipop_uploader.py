@@ -90,7 +90,8 @@ def process(pipeline_data):
     cli_path = Path(
         str(
             settings.get("cli_path")
-            or r"J:\tools\upload-targets\upload_targets_cli.py"
+            or os.environ.get("NICONICO_UPLOAD_TARGETS_CLI")
+            or PROJECT_ROOT / "tools" / "upload_targets_cli.py"
         )
     )
     if not python_exe.is_file():
@@ -404,9 +405,11 @@ def ensure_credentials_api(settings: dict) -> None:
             or PROJECT_ROOT / ".venv" / "Scripts" / "python.exe"
         )
     )
-    workdir = Path(
-        str(settings.get("credentials_api_workdir") or r"J:\tools")
-    )
+    workdir = Path(str(
+        settings.get("credentials_api_workdir")
+        or os.environ.get("NICONICO_CREDENTIALS_API_WORKDIR")
+        or PROJECT_ROOT
+    ))
     module = str(
         settings.get("credentials_api_module")
         or "scripts.password_manager.api_main"
