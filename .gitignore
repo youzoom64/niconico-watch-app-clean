@@ -6,6 +6,8 @@ __pycache__/
 .venv/
 tools/ffmpeg/
 tools/ffmpeg-release-essentials.zip
+tools/python311/
+tools/python-*-amd64.exe
 setup_log.txt
 .setup_complete
 venv/
