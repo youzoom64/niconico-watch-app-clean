@@ -123,10 +123,10 @@ foreach ($entry in $recommended.GetEnumerator()) {
 $settings | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $recorderConfig -Encoding UTF8
 
 $appConfig = Join-Path $projectRoot 'config.json'
+$utf8 = New-Object Text.UTF8Encoding($false)
+$jsonExe = $recorderExe.Replace('\', '\\')
 if (Test-Path -LiteralPath $appConfig) {
-    $utf8 = New-Object Text.UTF8Encoding($false)
     $appText = [IO.File]::ReadAllText($appConfig, [Text.Encoding]::UTF8)
-    $jsonExe = $recorderExe.Replace('\', '\\')
     $pathPattern = '("slnico_live_rec_exe"\s*:\s*")[^"]*(")'
     if ([regex]::IsMatch($appText, $pathPattern)) {
         $appText = [regex]::Replace(
@@ -137,5 +137,8 @@ if (Test-Path -LiteralPath $appConfig) {
         )
         [IO.File]::WriteAllText($appConfig, $appText, $utf8)
     }
+} else {
+    $initialConfig = "{`n  `"slnico_live_rec_exe`": `"$jsonExe`"`n}`n"
+    [IO.File]::WriteAllText($appConfig, $initialConfig, $utf8)
 }
 Write-Host "[SlNicoLiveRec] Ready: $recorderExe"
