@@ -27,9 +27,16 @@
 
 Pythonをインストールするときは、インストーラーの「Add Python to PATH」にチェックを入れてください。
 
-### 録画する場合
+### 録画する場合（必須）
 
-- SlNicoLiveRec
+放送を自動録画するには、別途`SlNicoLiveRec`をインストールする必要があります。このリポジトリには録画ソフト本体は含まれていません。
+
+1. SlNicoLiveRecをダウンロードして任意のフォルダーへ展開します。
+2. SlNicoLiveRecを起動し、ニコニコへログインして録画できる状態にします。
+3. niconico-watch-appのメインGUIで「設定」を開きます。
+4. 「録画アプリ」の欄へ、SlNicoLiveRecの実行ファイルと録画保存先を設定します。
+
+既に保存済みのMP4/MKVからHTMLを作るだけなら、SlNicoLiveRecは不要です。
 
 ### GPUで文字起こしする場合
 
