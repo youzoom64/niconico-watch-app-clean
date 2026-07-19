@@ -77,6 +77,20 @@ def test_manual_person_tags_are_loaded_and_generate_tag_pages(tmp_path: Path) ->
     assert str(tmp_path / "tags" / "tag_ハムちゃん.html") in generated
 
 
+def test_manual_exclude_overrides_automatic_tag_detection(tmp_path: Path) -> None:
+    (tmp_path / step13.MANUAL_TAGS_FILENAME).write_text(
+        json.dumps({"_exclude": {"lv1": ["ガルル"]}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    broadcasts = [_broadcast()]
+    broadcasts[0]["tags"] = ["ガルル", "yosino"]
+
+    excludes = step13.load_manual_tag_excludes(str(tmp_path))
+    step13.apply_manual_tag_excludes(broadcasts, excludes)
+
+    assert broadcasts[0]["tags"] == ["yosino"]
+
+
 def test_known_person_name_in_full_transcript_becomes_tag() -> None:
     broadcasts = [
         {

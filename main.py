@@ -29,6 +29,7 @@ def run_gui() -> int:
 def run_timeshift_gui(
     input_urls: Sequence[str] = (),
     input_files: Sequence[str] = (),
+    tag_url: str = "",
 ) -> int:
     os.environ[APP_ROLE_ENV] = "timeshift"
     ensure_import_path()
@@ -37,6 +38,7 @@ def run_timeshift_gui(
         module.main(
             initial_urls=list(input_urls),
             initial_files=list(input_files),
+            initial_tag_url=tag_url,
         )
     )
 
@@ -82,8 +84,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="ローカル処理へ追加する動画ファイル。複数指定可",
     )
+    timeshift_parser.add_argument("--tag-url", default="")
     timeshift_parser.set_defaults(
-        handler=lambda args: run_timeshift_gui(args.input_url, args.input_file)
+        handler=lambda args: run_timeshift_gui(args.input_url, args.input_file, args.tag_url)
     )
 
     tracker_parser = subparsers.add_parser("tracker", help="トラッカーCLIを起動する")

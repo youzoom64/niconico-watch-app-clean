@@ -65,6 +65,18 @@ def encode_add_local_files_message(paths: Iterable[object]) -> bytes:
     return (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")
 
 
+def encode_edit_tag_message(url: object) -> bytes:
+    return (json.dumps({"action": "edit_tag", "url": str(url or "").strip()}, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+def decode_edit_tag_message(raw: bytes) -> str:
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return ""
+    return str(payload.get("url") or "").strip() if isinstance(payload, dict) and payload.get("action") == "edit_tag" else ""
+
+
 def decode_add_local_files_message(raw: bytes) -> list[str]:
     try:
         payload = json.loads(raw.decode("utf-8"))
@@ -130,9 +142,15 @@ def send_local_files(paths: Iterable[object], *, timeout_ms: int = 500) -> bool:
     )
 
 
+def send_tag_edit_url(url: object, *, timeout_ms: int = 500) -> bool:
+    value = str(url or "").strip()
+    return bool(value) and _send_message(encode_edit_tag_message(value), timeout_ms=timeout_ms)
+
+
 class TimeshiftHandoffServer(QObject):
     urls_received = pyqtSignal(list)
     local_files_received = pyqtSignal(list)
+    tag_edit_received = pyqtSignal(str)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -180,6 +198,12 @@ class TimeshiftHandoffServer(QObject):
             if paths:
                 self.local_files_received.emit(paths)
                 socket.write(encode_ack_message(len(paths)))
+                socket.flush()
+                continue
+            tag_url = decode_edit_tag_message(bytes(raw_line))
+            if tag_url:
+                self.tag_edit_received.emit(tag_url)
+                socket.write(encode_ack_message(1))
                 socket.flush()
 
     def _socket_disconnected(self, socket: QLocalSocket) -> None:

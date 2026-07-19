@@ -17,12 +17,13 @@ from datetime import datetime
 from html import escape
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import requests
 from bs4 import BeautifulSoup
 from app.generated_html_paths import is_pc_archive_html_candidate
 from PyQt6.QtCore import QAbstractTableModel, QByteArray, QDate, QItemSelectionModel, QModelIndex, QObject, QProcess, QProcessEnvironment, QRunnable, QSize, QThread, QThreadPool, QTimer, Qt, QUrl, pyqtSignal, pyqtSlot
-from PyQt6.QtGui import QAction, QBrush, QColor, QDesktopServices, QLinearGradient, QPainter
+from PyQt6.QtGui import QAction, QBrush, QColor, QDesktopServices, QLinearGradient, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QAbstractScrollArea,
@@ -76,6 +77,7 @@ from timeshift_handoff import normalize_local_files as normalize_handoff_local_f
 from timeshift_handoff import normalize_urls as normalize_handoff_urls
 from timeshift_handoff import send_local_files as send_handoff_local_files
 from timeshift_handoff import send_urls as send_handoff_urls
+from timeshift_handoff import send_tag_edit_url as send_handoff_tag_edit_url
 
 
 LOG_LEVELS = {"TRACE": 5, "DEBUG": 10, "INFO": 20, "WARN": 30, "ERROR": 40}
@@ -210,6 +212,20 @@ def send_local_files_to_processing_gui(paths: list[Path | str]) -> str:
     success = bool(started[0]) if isinstance(started, tuple) else bool(started)
     if not success:
         raise RuntimeError("ローカル処理GUIを起動できません")
+    return "started"
+
+
+def send_tag_edit_to_timeshift_gui(url: str) -> str:
+    value = str(url or "").strip()
+    if send_handoff_tag_edit_url(value, timeout_ms=300):
+        return "sent"
+    python_exe = APP_ROOT / ".venv" / "Scripts" / "pythonw.exe"
+    if not python_exe.exists():
+        python_exe = Path(sys.executable).with_name("pythonw.exe")
+    started = QProcess.startDetached(str(python_exe), [str(APP_ROOT / "main.py"), "timeshift", "--tag-url", value], str(APP_ROOT))
+    success = bool(started[0]) if isinstance(started, tuple) else bool(started)
+    if not success:
+        raise RuntimeError("タイムシフトGUIを起動できません")
     return "started"
 
 
@@ -508,13 +524,21 @@ def install_table_copy_menu(table: QTableView) -> None:
 
         watch_url = broadcast_watch_url(row)
         if watch_url:
-            open_watch = menu.addAction("放送ページを開く")
+            open_watch = menu.addAction("URLにジャンプ")
             open_watch.triggered.connect(
                 lambda _=False, target=watch_url: QDesktopServices.openUrl(QUrl(target))
             )
             copy_watch_url = menu.addAction("放送URLをコピー")
             copy_watch_url.triggered.connect(
                 lambda _=False, text=watch_url: copy_text(text, "放送URLコピー")
+            )
+
+        user_id = str(row.get("user_id") or "").strip()
+        if user_id.isdigit():
+            user_url = f"https://www.nicovideo.jp/user/{user_id}"
+            open_user = menu.addAction("ユーザーページを開く")
+            open_user.triggered.connect(
+                lambda _=False, target=user_url: QDesktopServices.openUrl(QUrl(target))
             )
 
         local_processing_sender = getattr(table, "_local_processing_rows_sender", None)
@@ -568,6 +592,36 @@ def install_table_copy_menu(table: QTableView) -> None:
             action.triggered.connect(lambda _=False, text=value, label=label: copy_text(text, label))
 
         html_path = generated_html_path(row)
+        generated_url = str(row.get("generated_url") or "").strip()
+        if not generated_url and html_path is not None:
+            lv = str(row.get("lv") or "").strip()
+            broadcaster_id = str(row.get("broadcaster_id") or "").strip()
+            if not broadcaster_id:
+                path_parts = list(html_path.parts)
+                lowered_parts = [part.lower() for part in path_parts]
+                if "niconico" in lowered_parts:
+                    niconico_index = len(lowered_parts) - 1 - lowered_parts[::-1].index("niconico")
+                    if niconico_index + 1 < len(path_parts):
+                        broadcaster_id = path_parts[niconico_index + 1]
+            if broadcaster_id and lv:
+                generated_url = (
+                    f"https://warehouse.bitter.jp/niconico/{quote(broadcaster_id)}/"
+                    f"{quote(lv)}/{quote(html_path.name)}"
+                )
+        if generated_url.startswith(("http://", "https://")):
+            menu.addSeparator()
+            edit_tags = menu.addAction("タグを編集")
+            edit_tags.triggered.connect(
+                lambda _=False, target=generated_url: send_tag_edit_to_timeshift_gui(target)
+            )
+            open_generated_url = menu.addAction("生成ページにジャンプ")
+            open_generated_url.triggered.connect(
+                lambda _=False, target=generated_url: QDesktopServices.openUrl(QUrl(target))
+            )
+            copy_generated_url = menu.addAction("生成ページURLをコピー")
+            copy_generated_url.triggered.connect(
+                lambda _=False, text=generated_url: copy_text(text, "生成ページURLコピー")
+            )
         if html_path is not None:
             html_path_text = str(html_path)
             menu.addSeparator()
@@ -1028,6 +1082,31 @@ class NicovideoUserNameFetchJob(QRunnable):
                 return
             name = fetch_nicovideo_user_name(self.user_id)
             self.signals.finished.emit(self.user_id, name)
+        except Exception as exc:
+            self.signals.failed.emit(self.user_id, str(exc))
+
+
+class UserProfileFetchSignals(QObject):
+    finished = pyqtSignal(str, str, bytes)
+    failed = pyqtSignal(str, str)
+
+
+class NicovideoUserProfileFetchJob(QRunnable):
+    def __init__(self, user_id: str) -> None:
+        super().__init__()
+        self.user_id = user_id
+        self.signals = UserProfileFetchSignals()
+
+    def run(self) -> None:
+        try:
+            profile = fetch_nicovideo_user_profile(self.user_id)
+            icon_data = b""
+            icon_url = str(profile.get("icon_url") or "")
+            if icon_url:
+                response = requests.get(icon_url, headers=NICOVIDEO_BROWSER_HEADERS, timeout=10)
+                response.raise_for_status()
+                icon_data = response.content
+            self.signals.finished.emit(self.user_id, str(profile.get("name") or ""), icon_data)
         except Exception as exc:
             self.signals.failed.emit(self.user_id, str(exc))
 
@@ -3181,6 +3260,7 @@ class BroadcastCommentTab(QWidget):
         self.comment_keys: set[tuple[str, str, str, str, str]] = set()
         self.reaction_inflight_user_ids: set[str] = set()
         self.reaction_counts: dict[str, int] = {}
+        self.profile_requested_user_ids: set[str] = set()
         self.stop_requested_by_user = False
         self.has_received_comment = False
         self.html_created = False
@@ -3267,7 +3347,9 @@ class BroadcastCommentTab(QWidget):
         self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableView.SelectionMode.ExtendedSelection)
         self.table.verticalHeader().setVisible(False)
-        configure_table_header(self.table, [70, 170, 180, 520, 90])
+        self.table.setIconSize(QSize(32, 32))
+        self.table.verticalHeader().setDefaultSectionSize(38)
+        configure_table_header(self.table, [46, 70, 170, 180, 180, 520, 90])
 
         layout = QVBoxLayout(self)
         layout.addWidget(controls)
@@ -3572,12 +3654,39 @@ class BroadcastCommentTab(QWidget):
         horizontal_scroll = self.table.horizontalScrollBar().value()
         at_bottom = self.table.verticalScrollBar().value() >= self.table.verticalScrollBar().maximum() - 2
         self.model.append_comment(row)
+        self.request_comment_user_profile(row)
         if keep_bottom and at_bottom:
             self.table.scrollToBottom()
         self.install_comment_button(self.model.rowCount() - 1)
         self.table.horizontalScrollBar().setValue(horizontal_scroll)
         QTimer.singleShot(0, lambda value=horizontal_scroll: self.table.horizontalScrollBar().setValue(value))
         return True
+
+    def request_comment_user_profile(self, row: dict[str, Any]) -> None:
+        user_id = str(row.get("user_id") or "").strip()
+        if not user_id.isdigit() or user_id in self.profile_requested_user_ids:
+            return
+        self.profile_requested_user_ids.add(user_id)
+        job = NicovideoUserProfileFetchJob(user_id)
+        job.signals.finished.connect(self.on_comment_user_profile_fetched)
+        job.signals.failed.connect(self.on_comment_user_profile_failed)
+        QThreadPool.globalInstance().start(job)
+
+    def on_comment_user_profile_fetched(self, user_id: str, name: str, icon_data: bytes) -> None:
+        pixmap = QPixmap()
+        if icon_data:
+            pixmap.loadFromData(icon_data)
+            if not pixmap.isNull():
+                pixmap = pixmap.scaled(
+                    32,
+                    32,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+        self.model.update_user_profile(user_id, name, None if pixmap.isNull() else pixmap)
+
+    def on_comment_user_profile_failed(self, user_id: str, error: str) -> None:
+        append_app_log(f"コメントユーザー情報取得失敗: {user_id} / {error}", "DEBUG")
 
     def load_archived_comments(self) -> None:
         try:
@@ -3860,7 +3969,10 @@ class BroadcastCommentTab(QWidget):
         user_id = str(comment.get("user_id") or "").strip()
         if not user_id:
             return
-        self.table.setIndexWidget(self.model.index(row, 4), self.row_button("登録", row, self.register_special_user))
+        self.table.setIndexWidget(
+            self.model.index(row, self.model.columnCount() - 1),
+            self.row_button("登録", row, self.register_special_user),
+        )
         self.table.horizontalScrollBar().setValue(horizontal_scroll)
         QTimer.singleShot(0, lambda value=horizontal_scroll: self.table.horizontalScrollBar().setValue(value))
 
@@ -3892,8 +4004,10 @@ class BroadcastCommentTab(QWidget):
 
 class CommentTableModel(QAbstractTableModel):
     columns = [
+        ("user_icon", "アイコン"),
         ("no", "No"),
         ("received_at", "受信"),
+        ("user_name", "ユーザー名"),
         ("user_id", "ユーザーID"),
         ("text", "コメント"),
         ("special_action", "登録"),
@@ -3911,9 +4025,15 @@ class CommentTableModel(QAbstractTableModel):
         return 0 if parent.isValid() else len(self.columns)
 
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
-        if not index.isValid() or role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole):
+        if not index.isValid():
             return None
-        value = self._rows[index.row()].get(self.columns[index.column()][0])
+        key = self.columns[index.column()][0]
+        row = self._rows[index.row()]
+        if key == "user_icon" and role == Qt.ItemDataRole.DecorationRole:
+            return row.get("_user_icon_pixmap")
+        if role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole):
+            return None
+        value = row.get(key)
         return "" if value is None else str(value)
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
@@ -3928,6 +4048,20 @@ class CommentTableModel(QAbstractTableModel):
         self.beginInsertRows(QModelIndex(), row, row)
         self._rows.append(comment)
         self.endInsertRows()
+
+    def update_user_profile(self, user_id: str, name: str, pixmap: QPixmap | None) -> None:
+        for row_index, row in enumerate(self._rows):
+            if str(row.get("user_id") or "") != user_id:
+                continue
+            if name:
+                row["user_name"] = name
+            if pixmap is not None:
+                row["_user_icon_pixmap"] = pixmap
+            self.dataChanged.emit(
+                self.index(row_index, 0),
+                self.index(row_index, self.columnCount() - 1),
+                [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.DecorationRole],
+            )
 
     def advance_special_glow(self) -> None:
         self.glow_phase = (float(getattr(self, "glow_phase", 0.0)) + 0.42) % (math.pi * 2)
@@ -6158,12 +6292,19 @@ class BroadcastFilterModel(DateRangeCheckableModel):
         super().__init__()
         self._rows: list[dict[str, Any]] = []
         self.show_details = True
+        self.show_tags = False
+
+    def row_stride(self) -> int:
+        return 1 + int(self.show_details) + int(self.show_tags)
 
     def is_detail_row(self, row: int) -> bool:
-        return self.show_details and row % 2 == 1
+        return row % self.row_stride() != 0
+
+    def is_tag_row(self, row: int) -> bool:
+        return self.show_tags and row % self.row_stride() == 1 + int(self.show_details)
 
     def source_row(self, row: int) -> int:
-        return row // 2 if self.show_details else row
+        return row // self.row_stride()
 
     def set_show_details(self, enabled: bool) -> None:
         enabled = bool(enabled)
@@ -6173,8 +6314,16 @@ class BroadcastFilterModel(DateRangeCheckableModel):
         self.show_details = enabled
         self.endResetModel()
 
+    def set_show_tags(self, enabled: bool) -> None:
+        enabled = bool(enabled)
+        if self.show_tags == enabled:
+            return
+        self.beginResetModel()
+        self.show_tags = enabled
+        self.endResetModel()
+
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
-        return 0 if parent.isValid() else len(self._rows) * (2 if self.show_details else 1)
+        return 0 if parent.isValid() else len(self._rows) * self.row_stride()
 
     def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
         return 0 if parent.isValid() else len(self.columns)
@@ -6188,6 +6337,9 @@ class BroadcastFilterModel(DateRangeCheckableModel):
         row = self._rows[source_row]
         if detail_row:
             if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole) and index.column() == 0:
+                if self.is_tag_row(index.row()):
+                    tags = [tag.strip() for tag in str(row.get("tags") or "").split("/") if tag.strip()]
+                    return "   ".join(f"☑ #{tag}" for tag in tags) if tags else "☐ タグなし"
                 generated = {
                     item.strip() for item in str(row.get("generated_elements") or "").split("/")
                     if item.strip() and item.strip() != "なし"
@@ -6247,6 +6399,7 @@ class BroadcastFilterModel(DateRangeCheckableModel):
                 "html_path": str(row.get("html_path") or ""),
                 "html_uploaded": str(row.get("html_uploaded") or ""),
                 "generated_elements": str(row.get("generated_elements") or ""),
+                "tags": str(row.get("tags") or ""),
             }
             for row in rows
         ]
@@ -6423,6 +6576,7 @@ class InspectionTab(QWidget):
         self.broadcaster_broadcast_filter_model = BroadcastFilterModel()
         self.broadcaster_broadcast_filter_model.dataChanged.connect(lambda *_args: self.reload_broadcaster_content())
         self.broadcaster_broadcast_filter_table = self.make_table(self.broadcaster_broadcast_filter_model)
+        self.broadcaster_broadcast_filter_table.setShowGrid(False)
         self.broadcaster_broadcast_filter_table.setItemDelegate(
             BroadcastTwoLineDelegate(self.broadcaster_broadcast_filter_table)
         )
@@ -6455,6 +6609,11 @@ class InspectionTab(QWidget):
         self.broadcaster_status_visible.setChecked(True)
         self.broadcaster_status_visible.toggled.connect(
             self.broadcaster_broadcast_filter_model.set_show_details
+        )
+        self.broadcaster_tags_visible = QCheckBox("タグも表示")
+        self.broadcaster_tags_visible.setChecked(False)
+        self.broadcaster_tags_visible.toggled.connect(
+            self.broadcaster_broadcast_filter_model.set_show_tags
         )
         self.broadcaster_uploaded_only = QCheckBox("HTML公開済みのみ")
         self.broadcaster_uploaded_only.setChecked(True)
@@ -6589,6 +6748,7 @@ class InspectionTab(QWidget):
         broadcaster_broadcast_button_row.addWidget(self.broadcaster_broadcast_check_all_button)
         broadcaster_broadcast_button_row.addWidget(self.broadcaster_broadcast_uncheck_all_button)
         broadcaster_broadcast_button_row.addWidget(self.broadcaster_status_visible)
+        broadcaster_broadcast_button_row.addWidget(self.broadcaster_tags_visible)
         broadcaster_broadcast_button_row.addWidget(self.broadcaster_uploaded_only)
         broadcaster_broadcast_button_row.addStretch(1)
         broadcaster_right_layout.addLayout(broadcaster_broadcast_button_row)
@@ -7195,7 +7355,23 @@ class InspectionTab(QWidget):
                 """,
                 (broadcaster_id,),
             ).fetchall()
+            broadcaster_settings = conn.execute(
+                "SELECT html_base_url FROM monitored_broadcasters WHERE broadcaster_id = ?",
+                (broadcaster_id,),
+            ).fetchone()
         program_dicts = [dict(row) for row in programs]
+        html_base_url = (
+            str(broadcaster_settings["html_base_url"] or "").strip().rstrip("/")
+            if broadcaster_settings
+            else ""
+        )
+        if not html_base_url:
+            html_base_url = f"https://warehouse.bitter.jp/niconico/{quote(broadcaster_id)}"
+        for row in program_dicts:
+            lv = str(row.get("lv") or "").strip()
+            html_name = Path(str(row.get("html_path") or "")).name
+            if lv and html_name:
+                row["generated_url"] = f"{html_base_url}/{quote(lv)}/{quote(html_name)}"
         self.broadcaster_programs_model.update_rows(program_dicts)
         self._broadcaster_broadcast_rows = []
         for row in program_dicts:
@@ -7250,6 +7426,19 @@ class InspectionTab(QWidget):
                 elements.append("感情スコア")
             if "<h2>単語使用頻度ランキング</h2>" in html_text:
                 elements.append("言葉抽出")
+            page_tags: list[str] = []
+            page_tags_match = re.search(
+                r'<script[^>]+id=["\']archive-page-tags["\'][^>]*>(.*?)</script>',
+                html_text, re.DOTALL | re.IGNORECASE,
+            )
+            if page_tags_match:
+                try:
+                    page_tags = [
+                        str(tag).strip() for tag in json.loads(page_tags_match.group(1))
+                        if str(tag).strip()
+                    ]
+                except Exception:
+                    page_tags = []
             self._broadcaster_broadcast_rows.append(
                 {
                 "visible": True,
@@ -7260,6 +7449,7 @@ class InspectionTab(QWidget):
                 "html_path": row["html_path"],
                 "html_uploaded": "済" if int(row.get("archive_upload_completed") or 0) else "未",
                 "generated_elements": " / ".join(elements) if elements else "なし",
+                "tags": " / ".join(page_tags),
                 }
             )
         self.broadcaster_broadcast_period_enabled = False
@@ -7498,25 +7688,37 @@ def save_special_user(*, user_id: str, label: str = "", note: str = "") -> None:
         conn.commit()
 
 
-def fetch_nicovideo_user_name(user_id: str) -> str:
+NICOVIDEO_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+    )
+}
+
+
+def fetch_nicovideo_user_profile(user_id: str) -> dict[str, str]:
     url = f"https://www.nicovideo.jp/user/{user_id}"
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
-        )
-    }
-    response = requests.get(url, headers=headers, timeout=10)
+    response = requests.get(url, headers=NICOVIDEO_BROWSER_HEADERS, timeout=10)
     response.raise_for_status()
     response.encoding = "utf-8"
     soup = BeautifulSoup(response.text, "html.parser")
     meta = soup.find("meta", {"property": "profile:username"})
+    name = ""
     if meta and meta.get("content"):
-        return str(meta["content"]).strip()
-    title = soup.find("title")
-    if title and title.text.strip():
-        return title.text.split("-")[0].strip()
-    raise RuntimeError("名前を取得できなかった")
+        name = str(meta["content"]).strip()
+    if not name:
+        title = soup.find("title")
+        if title and title.text.strip():
+            name = title.text.split("-")[0].strip()
+    icon_meta = soup.find("meta", {"property": "og:image"})
+    icon_url = str(icon_meta.get("content") or "").strip() if icon_meta else ""
+    if not name:
+        raise RuntimeError("名前を取得できなかった")
+    return {"name": name, "icon_url": icon_url}
+
+
+def fetch_nicovideo_user_name(user_id: str) -> str:
+    return fetch_nicovideo_user_profile(user_id)["name"]
 
 
 def fetch_niconico_channel_info(value: str) -> dict[str, str]:
@@ -7999,6 +8201,257 @@ class TimeshiftLocalFilesTab(QWidget):
         )
         self.active_job = None
         self.start_button.setEnabled(True)
+
+
+class BroadcastTagEditJob(QRunnable):
+    def __init__(self, broadcaster_id: str, lv: str, upload: bool) -> None:
+        super().__init__()
+        self.broadcaster_id = broadcaster_id
+        self.lv = lv
+        self.upload = upload
+        self.signals = TimeshiftAcquireSignals()
+
+    @pyqtSlot()
+    def run(self) -> None:
+        try:
+            steps = ["step12_html_generator", "step13_index_generator", "step14_modern_list_generator"]
+            if self.upload:
+                steps.append("step15_lolipop_uploader")
+            self.signals.progress.emit(f"{self.lv}: タグ再生成開始")
+            tracker.run_legacy_archiver_steps(
+                self.lv,
+                account_id=self.broadcaster_id,
+                steps=steps,
+                force_overwrite_existing_html=True,
+                upload_html_only=True,
+                progress_callback=self.signals.progress.emit,
+            )
+            self.signals.finished.emit({"ok": True})
+        except Exception as exc:
+            self.signals.finished.emit({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+
+
+class TimeshiftTagEditorTab(QWidget):
+    """放送単位の人物タグ追加・誤検出除外を編集する。"""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.active_job: BroadcastTagEditJob | None = None
+        self.loaded_tags: list[str] = []
+        self.broadcaster_edit = QLineEdit()
+        self.broadcaster_edit.setPlaceholderText("配信者ID（例: 39532023）")
+        self.lv_edit = QLineEdit()
+        self.lv_edit.setPlaceholderText("lv番号または放送URL")
+        self.tags_table = QTableWidget(0, 1)
+        self.tags_table.setHorizontalHeaderLabels(["このHTMLのタグ（チェックなし＝除外）"])
+        self.tags_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.tags_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.tags_table.setMaximumHeight(170)
+        self.transcript_table = QTableWidget(0, 2)
+        self.transcript_table.setHorizontalHeaderLabels(["時間", "文字起こし（文字を直接修正）"])
+        self.transcript_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.transcript_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.transcript_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        load_button = QPushButton("現在の修正を読込")
+        load_button.clicked.connect(self.load_values)
+        self.upload_check = QCheckBox("保存後に再生成・アップロード")
+        self.upload_check.setChecked(True)
+        self.save_button = QPushButton("保存して反映")
+        self.save_button.clicked.connect(self.save_and_apply)
+        self.status_view = QTextEdit()
+        self.status_view.setReadOnly(True)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("放送ごとにタグを追加、または誤検出タグを除外します。文字起こし本文は変更しません。"))
+        for label, widget in (
+            ("配信者ID", self.broadcaster_edit), ("放送URL / lv", self.lv_edit),
+        ):
+            row = QHBoxLayout()
+            row.addWidget(QLabel(label))
+            row.addWidget(widget, 1)
+            layout.addLayout(row)
+        layout.addWidget(self.tags_table)
+        layout.addWidget(self.transcript_table, 1)
+        buttons = QHBoxLayout()
+        buttons.addWidget(load_button)
+        buttons.addWidget(self.upload_check)
+        buttons.addStretch(1)
+        buttons.addWidget(self.save_button)
+        layout.addLayout(buttons)
+        self.status_view.setMaximumHeight(110)
+        layout.addWidget(self.status_view)
+
+    @staticmethod
+    def _names(text: str) -> list[str]:
+        return list(dict.fromkeys(x.strip() for x in re.split(r"[,、\n]", text) if x.strip()))
+
+    def _identity(self) -> tuple[str, str]:
+        source = self.lv_edit.text().strip()
+        broadcaster_id = self.broadcaster_edit.text().strip()
+        account_match = re.search(r"/niconico/(\d+)/", source, re.IGNORECASE)
+        if account_match:
+            broadcaster_id = account_match.group(1)
+            self.broadcaster_edit.setText(broadcaster_id)
+        match = re.search(r"lv\d+", source, re.IGNORECASE)
+        lv = match.group(0).lower() if match else ""
+        if not broadcaster_id or not lv:
+            raise ValueError("配信者IDとlv番号を入力してください")
+        return broadcaster_id, lv
+
+    def _path(self, broadcaster_id: str) -> Path:
+        root = tracker.niconico_platform_target_root(tracker.load_config()) / broadcaster_id
+        for name in ("broadcast", "bloadcast"):
+            candidate = root / name
+            if candidate.is_dir():
+                return candidate / "index_person_tags.json"
+        return root / "broadcast" / "index_person_tags.json"
+
+    def _payload(self, path: Path) -> dict[str, Any]:
+        if not path.is_file():
+            return {}
+        value = json.loads(path.read_text(encoding="utf-8-sig"))
+        return value if isinstance(value, dict) else {}
+
+    def load_values(self) -> None:
+        try:
+            broadcaster_id, lv = self._identity()
+            payload = self._payload(self._path(broadcaster_id))
+            account_dir = self._path(broadcaster_id).parent
+            html_files = sorted((account_dir / lv).glob(f"{lv}_*.html"))
+            if not html_files:
+                html_files = sorted((account_dir / lv).glob("*.html"))
+            tags: list[str] = []
+            if html_files:
+                document = html_files[0].read_text(encoding="utf-8-sig", errors="replace")
+                tag_match = re.search(
+                    r'<script[^>]+id=["\']archive-page-tags["\'][^>]*>(.*?)</script>',
+                    document, re.DOTALL | re.IGNORECASE,
+                )
+                if tag_match:
+                    value = json.loads(tag_match.group(1))
+                    tags = [str(tag).strip() for tag in value if str(tag).strip()]
+            excludes = payload.get("_exclude", {})
+            excluded_tags = (
+                [str(tag).strip() for tag in excludes.get(lv, []) if str(tag).strip()]
+                if isinstance(excludes, dict) else []
+            )
+            self.loaded_tags = list(dict.fromkeys([*tags, *excluded_tags]))
+            self.tags_table.setRowCount(0)
+            for tag in self.loaded_tags:
+                row = self.tags_table.rowCount()
+                self.tags_table.insertRow(row)
+                item = QTableWidgetItem(tag)
+                item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                item.setCheckState(
+                    Qt.CheckState.Unchecked if tag in excluded_tags else Qt.CheckState.Checked
+                )
+                self.tags_table.setItem(row, 0, item)
+            self.transcript_table.setRowCount(0)
+            with tracker.connect() as conn:
+                rows = conn.execute(
+                    "SELECT id, start_seconds, end_seconds, text FROM archive_transcript_segments "
+                    "WHERE lv = ? ORDER BY start_seconds, id", (lv,),
+                ).fetchall()
+            for segment in rows:
+                row = self.transcript_table.rowCount()
+                self.transcript_table.insertRow(row)
+                start = float(segment["start_seconds"] or 0)
+                end = float(segment["end_seconds"] or start)
+                time_item = QTableWidgetItem(f"{start:.2f} - {end:.2f}")
+                time_item.setFlags(time_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                time_item.setData(Qt.ItemDataRole.UserRole, int(segment["id"]))
+                self.transcript_table.setItem(row, 0, time_item)
+                self.transcript_table.setItem(row, 1, QTableWidgetItem(str(segment["text"] or "")))
+            self.status_view.append(
+                f"{lv}: タグ{len(self.loaded_tags)}件 / 文字起こし{len(rows)}件を読み込みました"
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "タグ修正", str(exc))
+
+    def save_and_apply(self) -> None:
+        try:
+            broadcaster_id, lv = self._identity()
+            path = self._path(broadcaster_id)
+            payload = self._payload(path)
+            exclusions = [
+                self.tags_table.item(row, 0).text().strip()
+                for row in range(self.tags_table.rowCount())
+                if self.tags_table.item(row, 0)
+                and self.tags_table.item(row, 0).text().strip()
+                and self.tags_table.item(row, 0).checkState() != Qt.CheckState.Checked
+            ]
+            exclude_map = payload.get("_exclude")
+            if not isinstance(exclude_map, dict):
+                exclude_map = {}
+            if exclusions:
+                exclude_map[lv] = exclusions
+            else:
+                exclude_map.pop(lv, None)
+            if exclude_map:
+                payload["_exclude"] = exclude_map
+            else:
+                payload.pop("_exclude", None)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_suffix(".json.tmp")
+            temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            temporary.replace(path)
+            changed_segments: list[tuple[int, str]] = []
+            with tracker.connect() as conn:
+                for row in range(self.transcript_table.rowCount()):
+                    time_item = self.transcript_table.item(row, 0)
+                    text_item = self.transcript_table.item(row, 1)
+                    if not time_item or not text_item:
+                        continue
+                    db_id = int(time_item.data(Qt.ItemDataRole.UserRole))
+                    new_text = text_item.text().strip()
+                    old = conn.execute(
+                        "SELECT text, raw_json FROM archive_transcript_segments WHERE id = ? AND lv = ?",
+                        (db_id, lv),
+                    ).fetchone()
+                    if old and new_text != str(old["text"] or ""):
+                        try:
+                            raw = json.loads(str(old["raw_json"] or "{}"))
+                        except Exception:
+                            raw = {}
+                        raw["text"] = new_text
+                        conn.execute(
+                            "UPDATE archive_transcript_segments SET text = ?, raw_json = ? WHERE id = ? AND lv = ?",
+                            (new_text, json.dumps(raw, ensure_ascii=False), db_id, lv),
+                        )
+                        changed_segments.append((row, new_text))
+                conn.commit()
+            transcript_files = sorted((path.parent / lv).glob(f"{lv}_transcript.json"))
+            if transcript_files and changed_segments:
+                transcript_path = transcript_files[0]
+                transcript_payload = json.loads(transcript_path.read_text(encoding="utf-8-sig"))
+                transcripts = transcript_payload.get("transcripts", [])
+                for row, new_text in changed_segments:
+                    if row < len(transcripts) and isinstance(transcripts[row], dict):
+                        transcripts[row]["text"] = new_text
+                temp_transcript = transcript_path.with_suffix(".json.tmp")
+                temp_transcript.write_text(
+                    json.dumps(transcript_payload, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                temp_transcript.replace(transcript_path)
+            self.status_view.append(
+                f"{lv}: 保存完了 / 削除タグ={exclusions or 'なし'} / 文字修正={len(changed_segments)}件"
+            )
+            self.save_button.setEnabled(False)
+            self.active_job = BroadcastTagEditJob(broadcaster_id, lv, self.upload_check.isChecked())
+            self.active_job.signals.progress.connect(self.status_view.append)
+            self.active_job.signals.finished.connect(self._finished)
+            QThreadPool.globalInstance().start(self.active_job)
+        except Exception as exc:
+            QMessageBox.critical(self, "タグ修正", str(exc))
+
+    @pyqtSlot(object)
+    def _finished(self, result: dict[str, Any]) -> None:
+        if result.get("ok"):
+            self.status_view.append("タグ反映完了")
+        else:
+            self.status_view.append(f"反映失敗: {result.get('error')}")
+        self.active_job = None
+        self.save_button.setEnabled(True)
 
 
 class TimeshiftAcquireSignals(QObject):

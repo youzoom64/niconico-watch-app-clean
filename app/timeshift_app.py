@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 import tracker
 from gui_app import (
     APP_ROLE_ENV,
+    TimeshiftTagEditorTab,
     TimeshiftLocalFilesTab,
     TimeshiftTab,
     append_app_log,
@@ -32,6 +33,7 @@ from timeshift_handoff import (
     normalize_local_files,
     normalize_urls,
     send_local_files,
+    send_tag_edit_url,
     send_urls,
 )
 
@@ -97,6 +99,7 @@ class TimeshiftMainWindow(QMainWindow):
         self,
         initial_urls: list[str] | None = None,
         initial_files: list[str] | None = None,
+        initial_tag_url: str = "",
     ) -> None:
         super().__init__()
         role = str(os.environ.get(APP_ROLE_ENV) or "").strip().lower()
@@ -109,8 +112,10 @@ class TimeshiftMainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.acquire_tab = TimeshiftTab()
         self.local_files_tab = TimeshiftLocalFilesTab()
+        self.tag_editor_tab = TimeshiftTagEditorTab()
         self.tabs.addTab(self.acquire_tab, "URLから取得")
         self.tabs.addTab(self.local_files_tab, "ローカル処理")
+        self.tabs.addTab(self.tag_editor_tab, "タグ修正")
         self.setCentralWidget(self.tabs)
 
         status = QStatusBar()
@@ -125,12 +130,23 @@ class TimeshiftMainWindow(QMainWindow):
         self.handoff_server = TimeshiftHandoffServer(self)
         self.handoff_server.urls_received.connect(self.receive_urls)
         self.handoff_server.local_files_received.connect(self.receive_local_files)
+        self.handoff_server.tag_edit_received.connect(self.receive_tag_edit)
         if not self.handoff_server.start():
             raise RuntimeError("タイムシフトGUI受信サーバーを起動できません")
         if initial_urls:
             self.receive_urls(initial_urls)
         if initial_files:
             self.receive_local_files(initial_files)
+        if initial_tag_url:
+            self.receive_tag_edit(initial_tag_url)
+
+    def receive_tag_edit(self, url: str) -> None:
+        self.tag_editor_tab.lv_edit.setText(str(url or ""))
+        self.tag_editor_tab.load_values()
+        self.tabs.setCurrentWidget(self.tag_editor_tab)
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
 
     def receive_urls(self, urls: list[str]) -> None:
         normalized = normalize_urls(urls)
@@ -221,6 +237,7 @@ foreach ($childPid in ($killPids | Sort-Object -Descending -Unique)) {{
 def main(
     initial_urls: list[str] | None = None,
     initial_files: list[str] | None = None,
+    initial_tag_url: str = "",
 ) -> int:
     install_crash_logging()
     initial_urls = normalize_urls(initial_urls or [])
@@ -237,11 +254,12 @@ def main(
     app.setApplicationDisplayName("Niconico タイムシフト / ローカル処理")
     acquired = acquire_single_instance()
     if not acquired:
-        if initial_urls or initial_files:
+        if initial_urls or initial_files or initial_tag_url:
             for _attempt in range(50):
                 urls_sent = not initial_urls or send_urls(initial_urls, timeout_ms=200)
                 files_sent = not initial_files or send_local_files(initial_files, timeout_ms=200)
-                if urls_sent and files_sent:
+                tag_sent = not initial_tag_url or send_tag_edit_url(initial_tag_url, timeout_ms=200)
+                if urls_sent and files_sent and tag_sent:
                     return 0
                 time.sleep(0.1)
                 if acquire_single_instance():
@@ -256,6 +274,7 @@ def main(
     window = TimeshiftMainWindow(
         initial_urls=initial_urls,
         initial_files=initial_files,
+        initial_tag_url=initial_tag_url,
     )
     window.show()
     return int(app.exec())
