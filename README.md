@@ -87,9 +87,9 @@ Pythonをインストールするときは、インストーラーの「Add Pyth
 
 ## 5. 配信者を監視する
 
-各設定項目の詳しい説明は、[配信者設定 取扱説明書](docs/broadcaster-settings.html)を参照してください。
+各設定項目の詳しい説明は、[配信者設定 取扱説明書をブラウザで見る](https://htmlpreview.github.io/?https://github.com/youzoom64/niconico-watch-app/blob/master/docs/broadcaster-settings.html)を参照してください。
 
-スペシャルユーザーの登録・AI分析・自動反応・配信者との紐付けは、[スペシャルユーザー設定 取扱説明書](docs/special-user-settings.html)を参照してください。
+スペシャルユーザーの登録・AI分析・自動反応・配信者との紐付けは、[スペシャルユーザー設定 取扱説明書をブラウザで見る](https://htmlpreview.github.io/?https://github.com/youzoom64/niconico-watch-app/blob/master/docs/special-user-settings.html)を参照してください。
 
 1. メインGUIで監視配信者の編集画面を開きます。
 2. ニコニコの配信者IDと表示名を入力します。
