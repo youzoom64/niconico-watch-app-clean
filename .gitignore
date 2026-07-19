@@ -4,6 +4,10 @@ __pycache__/
 *.pyd
 .Python
 .venv/
+tools/ffmpeg/
+tools/ffmpeg-release-essentials.zip
+setup_log.txt
+.setup_complete
 venv/
 env/
 
