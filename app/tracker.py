@@ -676,6 +676,8 @@ class Config:
     codex_exec_extra_args: list[str]
     enable_archive_auto_upload: bool
     archive_upload_target_id: str
+    archive_upload_username: str
+    archive_upload_password: str
     archive_upload_remote_dir_template: str
     archive_upload_python_exe: str
     archive_upload_cli_path: str
@@ -7266,7 +7268,7 @@ def build_legacy_archiver_config(config: Config | None = None) -> dict[str, Any]
     """Return a minimal config shape accepted by copied legacy_archiver steps."""
     config = config or load_config()
     default_engine = "codex_exec" if config.codex_exec_enabled else "openai"
-    return {
+    legacy_config = {
         "display_name": str(config.recording_account_id or DEFAULT_RECORDING_ACCOUNT_ID),
         "api_settings": {
             "openai_api_key": config.openai_api_key or os.environ.get("OPENAI_API_KEY", ""),
@@ -7313,6 +7315,8 @@ def build_legacy_archiver_config(config: Config | None = None) -> dict[str, Any]
         "upload_settings": {
             "enable_auto_upload": bool(config.enable_archive_auto_upload),
             "target_id": str(config.archive_upload_target_id or "lolipop-main"),
+            "username": str(config.archive_upload_username or ""),
+            "password": str(config.archive_upload_password or ""),
             "remote_directory_template": str(
                 config.archive_upload_remote_dir_template or "niconico/{account_id}"
             ),
@@ -7373,6 +7377,39 @@ def build_legacy_archiver_config(config: Config | None = None) -> dict[str, Any]
             "users": {},
         },
     }
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT user_id, label, note, analysis_model, analysis_api_key,
+                   analysis_engine, analysis_effort, analysis_session_id
+            FROM special_users
+            WHERE enabled = 1
+            ORDER BY user_id
+            """
+        ).fetchall()
+    default_analysis_prompt = (
+        "このユーザーのコメントを時系列に要約し、主な話題、感情傾向、"
+        "配信者や他の視聴者との関わり方を、根拠のない断定を避けて分析してください。"
+    )
+    legacy_config["special_users_config"]["users"] = {
+        str(row["user_id"]): {
+            "user_id": str(row["user_id"]),
+            "display_name": str(row["label"] or "").strip() or f"ユーザー{row['user_id']}",
+            "analysis_enabled": True,
+            "analysis_engine": str(row["analysis_engine"] or default_engine),
+            "analysis_ai_model": str(row["analysis_model"] or "").strip(),
+            "analysis_api_key": str(row["analysis_api_key"] or ""),
+            "analysis_effort": str(row["analysis_effort"] or "medium"),
+            "analysis_session_id": str(row["analysis_session_id"] or "").strip(),
+            "analysis_prompt": default_analysis_prompt,
+            "template": "user_detail.html",
+            "description": str(row["note"] or ""),
+            "tags": [],
+        }
+        for row in rows
+        if str(row["user_id"] or "").strip()
+    }
+    return legacy_config
 
 
 def get_monitored_broadcaster_ai_task_engines(lv: str, config: Config | None = None) -> dict[str, str]:
@@ -10704,6 +10741,8 @@ def load_config() -> Config:
         codex_exec_extra_args=list(raw.get("codex_exec_extra_args", [])),
         enable_archive_auto_upload=bool(raw.get("enable_archive_auto_upload", False)),
         archive_upload_target_id=str(raw.get("archive_upload_target_id", "lolipop-main")),
+        archive_upload_username=str(raw.get("archive_upload_username", "")),
+        archive_upload_password=str(raw.get("archive_upload_password", "")),
         archive_upload_remote_dir_template=str(
             raw.get("archive_upload_remote_dir_template", "niconico/{account_id}")
         ),

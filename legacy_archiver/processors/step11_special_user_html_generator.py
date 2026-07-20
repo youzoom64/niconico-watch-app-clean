@@ -390,7 +390,10 @@ def generate_analysis_text_with_config(comments, config, user_id):
     # AI分析が有効な場合
     ai_analysis = None
     if user_detail_config.get("analysis_prompt"):
-        engine = get_ai_task_engine(config, "special_user_summary")
+        engine = str(
+            user_detail_config.get("analysis_engine")
+            or get_ai_task_engine(config, "special_user_summary")
+        )
         ai_model = model_for_engine(engine, user_detail_config.get("analysis_ai_model", "openai-gpt4o"))
         print(f"[INFO] スペシャルユーザーまとめ担当: {engine_label(engine)} / model={ai_model}")
         
@@ -467,11 +470,15 @@ def generate_ai_analysis(comments, config, user_detail_config):
 分析結果はHTML形式で出力し、<br>タグで改行してください。
 """
 
-        codex_config = get_codex_exec_config(config)
+        codex_config = get_codex_exec_config(config, user_detail_config)
         if codex_config.enabled:
             prompt = f"{system_prompt}\n\n{full_prompt}"
             print(f"[INFO] スペシャルユーザーまとめAI CLI呼び出し開始: provider={codex_config.provider} model={codex_config.model or '-'} prompt文字数={len(prompt)}")
-            result = run_codex_exec(prompt, config=codex_config)
+            result = run_codex_exec(
+                prompt,
+                config=codex_config,
+                session_id=str(user_detail_config.get("analysis_session_id") or "").strip(),
+            )
             if not result.ok:
                 raise Exception(f"Codex exec failed: rc={result.returncode} stderr={result.stderr.strip()}")
             return (result.text or result.stdout).strip()
@@ -479,7 +486,10 @@ def generate_ai_analysis(comments, config, user_detail_config):
         import openai
 
         # OpenAI APIキーの確認
-        openai_api_key = api_settings.get("openai_api_key", "")
+        openai_api_key = (
+            user_detail_config.get("analysis_api_key")
+            or api_settings.get("openai_api_key", "")
+        )
         if not openai_api_key:
             print("OpenAI APIキーが設定されていません")
             return None
@@ -506,18 +516,27 @@ def generate_ai_analysis(comments, config, user_detail_config):
         print(f"AI分析エラー: {str(e)}")
         return f"AI分析中にエラーが発生しました: {str(e)}"
 
-def get_codex_exec_config(config):
+def get_codex_exec_config(config, user_detail_config=None):
+    user_detail_config = user_detail_config or {}
     raw = config.get("codex_exec", {})
-    engine = get_ai_task_engine(config, "special_user_summary")
+    engine = str(
+        user_detail_config.get("analysis_engine")
+        or get_ai_task_engine(config, "special_user_summary")
+    )
     enabled = bool(raw.get("enabled", False)) and engine in {"codex_exec", "claude", "grok"}
+    command = str(raw.get("command") or "codex")
+    if engine == "claude":
+        command = "claude"
+    elif engine == "grok":
+        command = "grok"
     return CodexExecConfig(
         enabled=enabled,
         provider=provider_for_engine(engine, raw),
-        command=str(raw.get("command") or "codex"),
+        command=command,
         cwd=str(raw.get("cwd") or os.getcwd()),
         timeout_seconds=int(raw.get("timeout_seconds") or 3600),
-        model=model_for_cli_engine(engine, raw),
-        effort=str(raw.get("effort") or ""),
+        model=str(user_detail_config.get("analysis_ai_model") or model_for_cli_engine(engine, raw)),
+        effort=str(user_detail_config.get("analysis_effort") or raw.get("effort") or ""),
         extra_args=tuple(str(arg) for arg in raw.get("extra_args", []) if str(arg).strip()),
     )
 
@@ -565,7 +584,10 @@ def generate_gemini_analysis(comments, config, user_detail_config):
         
         # API設定を取得
         api_settings = config.get("api_settings", {})
-        google_api_key = api_settings.get("google_api_key", "")
+        google_api_key = (
+            user_detail_config.get("analysis_api_key")
+            or api_settings.get("google_api_key", "")
+        )
         
         if not google_api_key:
             print("Google APIキーが設定されていません")

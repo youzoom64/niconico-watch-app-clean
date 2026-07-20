@@ -99,7 +99,10 @@ def process(pipeline_data):
     if not cli_path.is_file():
         raise RuntimeError(f"Step15: upload-targets CLIが見つかりません: {cli_path}")
 
-    ensure_credentials_api(settings)
+    username = str(settings.get("username") or "")
+    password = str(settings.get("password") or "")
+    if not (username and password):
+        ensure_credentials_api(settings)
 
     command = [
         str(python_exe),
@@ -123,6 +126,10 @@ def process(pipeline_data):
         f"remote={remote_directory} lv={lv_value} files={len(publish_paths)} "
         f"paths={publish_paths}"
     )
+    child_env = os.environ.copy()
+    if username and password:
+        child_env["UPLOAD_TARGETS_USERNAME"] = username
+        child_env["UPLOAD_TARGETS_PASSWORD"] = password
     completed = subprocess.run(
         command,
         cwd=str(cli_path.parent),
@@ -130,6 +137,7 @@ def process(pipeline_data):
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=child_env,
         timeout=max(30, int(settings.get("timeout_seconds") or 900)),
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         check=False,

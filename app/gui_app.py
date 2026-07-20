@@ -2396,11 +2396,6 @@ class SpecialUserEditorDialog(QDialog):
         self.broadcaster_table.setModel(self.broadcaster_model)
         stabilize_table_scroll(self.broadcaster_table)
         setattr(self.broadcaster_table, "_broadcaster_timeshift_enabled", True)
-        setattr(
-            self.broadcaster_table,
-            "_stop_broadcaster_recording_sender",
-            self.stop_broadcaster_recording,
-        )
         self.broadcaster_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.broadcaster_table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         self.broadcaster_table.setAlternatingRowColors(True)
@@ -4327,12 +4322,6 @@ class MonitoredBroadcasterEditorDialog(QDialog):
             if isinstance(widget, QCheckBox):
                 widget.setChecked(bool(broadcaster.get(key, 1)))
 
-        self.ai_analysis_model = QLineEdit(str(broadcaster.get("ai_analysis_model") or "openai-gpt4o"))
-        self.ai_analysis_api_key = QLineEdit(str(broadcaster.get("ai_analysis_api_key") or ""))
-        self.ai_analysis_api_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.ai_reaction_model = QLineEdit(str(broadcaster.get("ai_reaction_model") or "openai-gpt4o"))
-        self.ai_reaction_api_key = QLineEdit(str(broadcaster.get("ai_reaction_api_key") or ""))
-        self.ai_reaction_api_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.summary_engine = NoWheelComboBox()
         self.setup_ai_engine_combo(self.summary_engine, str(broadcaster.get("summary_engine") or "codex_exec"))
         self.ai_conversation_engine = NoWheelComboBox()
@@ -4452,10 +4441,6 @@ class MonitoredBroadcasterEditorDialog(QDialog):
         self.add_field(ai_layout, "要約担当", self.summary_engine)
         self.add_field(ai_layout, "ニニココ会話担当", self.ai_conversation_engine)
         self.add_field(ai_layout, "スペシャルユーザーまとめ担当", self.special_user_summary_engine)
-        self.add_field(ai_layout, "AI分析モデル", self.ai_analysis_model)
-        self.add_field(ai_layout, "AI分析APIキー", self.ai_analysis_api_key)
-        self.add_field(ai_layout, "AI反応モデル", self.ai_reaction_model)
-        self.add_field(ai_layout, "AI反応APIキー", self.ai_reaction_api_key)
         self.add_field(ai_layout, "投稿サーバーURL", self.post_server_url)
         self.add_field(ai_layout, "投稿サーバーAPIキー", self.post_server_api_key)
         ai_layout.addWidget(self.html_upload_enabled)
@@ -4674,10 +4659,6 @@ class MonitoredBroadcasterEditorDialog(QDialog):
             "music_prompt": self.music_prompt.toPlainText().strip(),
             "intro_conversation_prompt": self.intro_conversation_prompt.toPlainText().strip(),
             "outro_conversation_prompt": self.outro_conversation_prompt.toPlainText().strip(),
-            "ai_analysis_model": self.ai_analysis_model.text().strip(),
-            "ai_analysis_api_key": self.ai_analysis_api_key.text(),
-            "ai_reaction_model": self.ai_reaction_model.text().strip(),
-            "ai_reaction_api_key": self.ai_reaction_api_key.text(),
             "character1_name": self.character1_name.text().strip(),
             "character1_image_url": self.character1_image_url.text().strip(),
             "character1_image_flip": int(self.character1_image_flip.isChecked()),
@@ -4727,6 +4708,11 @@ class BroadcasterMonitorTab(QWidget):
         self.broadcaster_table.setModel(self.broadcaster_model)
         stabilize_table_scroll(self.broadcaster_table)
         setattr(self.broadcaster_table, "_broadcaster_timeshift_enabled", True)
+        setattr(
+            self.broadcaster_table,
+            "_stop_broadcaster_recording_sender",
+            self.stop_broadcaster_recording,
+        )
         self.broadcaster_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.broadcaster_table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         self.broadcaster_table.setAlternatingRowColors(True)
@@ -5734,6 +5720,16 @@ class SettingsTab(QWidget):
         self.codex_exec_timeout_seconds = NoWheelSpinBox()
         self.codex_exec_timeout_seconds.setRange(10, 24 * 60 * 60)
         self.codex_exec_timeout_seconds.setSuffix(" 秒")
+        self.enable_archive_auto_upload = QCheckBox("Step 15で自動アップロードする")
+        self.archive_upload_target_id = QLineEdit()
+        self.archive_upload_target_id.setPlaceholderText("lolipop-main")
+        self.archive_upload_remote_dir_template = QLineEdit()
+        self.archive_upload_remote_dir_template.setPlaceholderText("niconico/{account_id}")
+        self.archive_upload_username = QLineEdit()
+        self.archive_upload_username.setPlaceholderText("FTPユーザー名")
+        self.archive_upload_password = QLineEdit()
+        self.archive_upload_password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.archive_upload_password.setPlaceholderText("FTPパスワード")
         self.status = QLabel("未取得")
 
         self.open_login_button = QPushButton("ログイン用Chromeを開く")
@@ -5908,6 +5904,18 @@ class SettingsTab(QWidget):
         codex_layout.addWidget(QLabel("タイムアウト"))
         codex_layout.addWidget(self.codex_exec_timeout_seconds)
 
+        upload_box = QGroupBox("Step 15 アップロードサーバー")
+        upload_layout = QVBoxLayout(upload_box)
+        upload_layout.addWidget(self.enable_archive_auto_upload)
+        upload_layout.addWidget(QLabel("接続先ID"))
+        upload_layout.addWidget(self.archive_upload_target_id)
+        upload_layout.addWidget(QLabel("リモート保存先"))
+        upload_layout.addWidget(self.archive_upload_remote_dir_template)
+        upload_layout.addWidget(QLabel("FTPユーザー名"))
+        upload_layout.addWidget(self.archive_upload_username)
+        upload_layout.addWidget(QLabel("FTPパスワード"))
+        upload_layout.addWidget(self.archive_upload_password)
+
         content = QWidget()
         content_layout = QVBoxLayout(content)
         content_layout.addWidget(box)
@@ -5919,6 +5927,7 @@ class SettingsTab(QWidget):
         content_layout.addWidget(image_box)
         content_layout.addWidget(whisperx_box)
         content_layout.addWidget(codex_box)
+        content_layout.addWidget(upload_box)
         content_layout.addStretch(1)
 
         scroll = QScrollArea()
@@ -6026,6 +6035,11 @@ class SettingsTab(QWidget):
             self.codex_exec_effort.setText(config.codex_exec_effort)
             self.codex_exec_cwd.setText(config.codex_exec_cwd)
             self.codex_exec_timeout_seconds.setValue(int(config.codex_exec_timeout_seconds or 3600))
+            self.enable_archive_auto_upload.setChecked(bool(config.enable_archive_auto_upload))
+            self.archive_upload_target_id.setText(config.archive_upload_target_id)
+            self.archive_upload_remote_dir_template.setText(config.archive_upload_remote_dir_template)
+            self.archive_upload_username.setText(config.archive_upload_username)
+            self.archive_upload_password.setText(config.archive_upload_password)
         except Exception as exc:
             self.status.setText(f"録画設定読込失敗: {exc}")
 
@@ -6207,6 +6221,11 @@ class SettingsTab(QWidget):
                 "codex_exec_effort": self.codex_exec_effort.text().strip(),
                 "codex_exec_cwd": self.codex_exec_cwd.text().strip() or str(Path.cwd()),
                 "codex_exec_timeout_seconds": int(self.codex_exec_timeout_seconds.value()),
+                "enable_archive_auto_upload": self.enable_archive_auto_upload.isChecked(),
+                "archive_upload_target_id": self.archive_upload_target_id.text().strip() or "lolipop-main",
+                "archive_upload_remote_dir_template": self.archive_upload_remote_dir_template.text().strip() or "niconico/{account_id}",
+                "archive_upload_username": self.archive_upload_username.text(),
+                "archive_upload_password": self.archive_upload_password.text(),
             }
         )
         window = self.window()
