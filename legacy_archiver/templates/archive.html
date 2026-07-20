@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{LIVE_TITLE}} - 配信アーカイブ</title>
+    <link rel="stylesheet" href="../../templates/css/archive-style.css" />
+    <meta name="description" content="{{LIVE_TITLE}} の配信アーカイブ" />
+    <meta property="og:title" content="{{LIVE_TITLE}}" />
+    <meta property="og:description" content="{{SUMMARY_TEXT}}" />
+    {{#if SUMMARY_IMAGE_URL}}
+    <meta property="og:image" content="{{SUMMARY_IMAGE_URL}}" />
+    {{/if}}
+  </head>
+  <body>
+    <!-- 設定データ注入 -->
+    <script>
+      window.NICO_ARCHIVE_CONFIG = {
+          lvValue: "{{LV_VALUE}}",
+          duration: {{DURATION}},
+          segments: {{{SEGMENTS_JSON}}},
+          emotionData: {
+              positive: {{{POSITIVE_SCORES_JSON}}},
+              center: {{{CENTER_SCORES_JSON}}},
+              negative: {{{NEGATIVE_SCORES_JSON}}}
+          },
+          screenshotPath: "./screenshot/{{LV_VALUE}}",
+          broadcast: {
+              title: "{{LIVE_TITLE}}",
+              broadcaster: "{{BROADCASTER}}",
+              community: "{{COMMUNITY_ID}}"
+          }
+      };
+    </script>
+
+    <!-- ヘッダー -->
+    <div class="broadcast-header">
+      <div class="header-content">
+        <h1 class="broadcast-title">{{LIVE_TITLE}}</h1>
+        <div class="broadcast-stats">
+          <div class="stat-item">
+            <span class="stat-label">開始時間</span>
+            <span class="stat-value">{{START_TIME}}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">総来場者数</span>
+            <span class="stat-value">{{WATCH_COUNT}}人</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">総コメント数</span>
+            <span class="stat-value">{{COMMENT_COUNT}}コメ</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">配信時間</span>
+            <span class="stat-value">{{ELAPSED_TIME}}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {{#if INTRO_CHAT}}
+    <!-- 開始前会話 -->
+    <section>
+      <div class="chat-container">
+        {{#each INTRO_CHAT}}
+        <div class="chat-message">
+          <div class="message-avatar">
+            <img src="{{ICON_URL}}" alt="{{SPEAKER_NAME}}" />
+            <span class="avatar-name">{{SPEAKER_NAME}}</span>
+          </div>
+          <div class="message-bubble">
+            <p>{{MESSAGE}}</p>
+          </div>
+        </div>
+        {{/each}}
+      </div>
+    </section>
+    {{/if}}
+
+    <!-- コメントランキング -->
+    <section>
+      <h2 class="section-title">🏆 コメントランキング</h2>
+      <ol>
+        {{#each COMMENTERS}}
+        <li id="li{{RANK}}">
+          {{RANK}}位:
+          <img
+            src="{{ICON_URL}}"
+            onerror="this.src='https://secure-dcdn.cdn.nimg.jp/nicoaccount/usericon/defaults/blank.jpg';"
+          />
+          {{#if USER_URL}}
+          <a href="{{USER_URL}}" target="_blank">{{USER_NAME}}</a>
+          {{else}} {{USER_NAME}} {{/if}}: {{COMMENT_COUNT}}コメント
+          <br />
+          <span style="font-size: 18px"
+            >初コメント ({{FIRST_COMMENT_TIME}}): {{FIRST_COMMENT}}</span
+          >
+          <br />
+          <span style="font-size: 18px"
+            >最終コメント ({{LAST_COMMENT_TIME}}): {{LAST_COMMENT}}</span
+          >
+
+          <div
+            class="user-comments"
+            id="{{USER_ID}}-comments"
+            style="display: none"
+          >
+            {{#each USER_COMMENTS}}
+            <p>{{TIME}} - {{TEXT}}</p>
+            {{/each}}
+          </div>
+          <button class="comment-toggle" data-user-id="{{USER_ID}}">
+            コメントを表示
+          </button>
+          <button
+            class="comment-toggle"
+            data-user-id="{{USER_ID}}"
+            style="display: none"
+          >
+            コメントを非表示
+          </button>
+        </li>
+        {{/each}}
+      </ol>
+    </section>
+
+    <!-- 要約セクション -->
+    <section class="summary-section">
+      <h1>
+        <font color="#800080" size="7"><b>要約</b></font>
+      </h1>
+      <p><b>放送の抽象化イメージ</b></p>
+
+      {{#if AUDIO_URL}}
+      <!-- AI音楽 -->
+      <div class="ai-music-card">
+        <h3>要約を歌詞とした音楽</h3>
+        <audio class="ai-audio" src="{{AUDIO_URL}}" controls="controls"></audio>
+      </div>
+      {{/if}} {{#if SUMMARY_IMAGE_URL}}
+      <!-- 抽象化イメージ -->
+      <div class="summary-image-container">
+        <a href="{{SUMMARY_IMAGE_URL}}" target="_blank">
+          <img
+            src="{{SUMMARY_IMAGE_URL}}"
+            style="height: auto"
+            width="400"
+            alt="放送の抽象化イメージ"
+          />
+        </a>
+      </div>
+      {{/if}}
+
+      <!-- 要約テキスト -->
+      <div class="summary-text">
+        <p>
+          <font size="3"
+            ><b>
+              要約：{{SUMMARY_TEXT}}<br />
+              感情分析：{{EMOTION_ANALYSIS}}
+            </b></font
+          >
+        </p>
+      </div>
+
+      <!-- スコア表示 -->
+      <div class="score-summary">
+        <p>
+          <span style="font-weight: bold">Average Score:</span>
+          <span style="color: blue">center:{{AVG_CENTER}}</span>
+          <span style="color: green">positive:{{AVG_POSITIVE}}</span>
+          <span style="color: red">negative:{{AVG_NEGATIVE}}</span>
+        </p>
+        <p>
+          <a href="#time_block_{{MAX_POSITIVE_TIME}}"
+            ><span style="color: green"
+              >Max Positive Score ({{MAX_POSITIVE_TIME_DISPLAY}}):
+              {{MAX_POSITIVE_SCORE}}</span
+            ></a
+          >
+        </p>
+        <p>
+          <a href="#time_block_{{MAX_CENTER_TIME}}"
+            ><span style="color: blue"
+              >Max Center Score ({{MAX_CENTER_TIME_DISPLAY}}):
+              {{MAX_CENTER_SCORE}}</span
+            ></a
+          >
+        </p>
+        <p>
+          <a href="#time_block_{{MAX_NEGATIVE_TIME}}"
+            ><span style="color: red"
+              >Max Negative Score ({{MAX_NEGATIVE_TIME_DISPLAY}}):
+              {{MAX_NEGATIVE_SCORE}}</span
+            ></a
+          >
+        </p>
+      </div>
+
+      <!-- 感情分析グラフ -->
+      <div class="emotion-chart-card">
+        <h3>感情分析グラフ</h3>
+        <div class="graph-container"></div>
+      </div>
+    </section>
+
+    {{#if WORD_FREQUENCY}}
+    <!-- 単語ランキング -->
+    <section>
+      <div class="topwords">
+        <h2>単語使用頻度ランキング</h2>
+        <button class="collapse-button" onclick="toggleCollapse()">
+          単語ランキング
+        </button>
+        <ol>
+          {{#each WORD_FREQUENCY}}
+          <li style="font-size: {{FONT_SIZE}}px">{{WORD}}: {{COUNT}}回</li>
+          {{/each}}
+        </ol>
+      </div>
+    </section>
+    {{/if}}
+
+    <!-- 高さ調整ゲージ -->
+    <div id="gaugeBarContainer">
+      <input id="gaugeBar" max="800" min="100" type="range" value="200" />
+    </div>
+
+    <!-- タイムライン -->
+    <div class="container">
+      <!-- 放送者タイムライン -->
+      <div class="timeline" id="timeline1">
+        <h2>放送者文字おこしのタイムライン</h2>
+        {{#each TIMELINE_BLOCKS}}
+        <div class="time-block" id="time_block_{{START_SECONDS}}">
+          <strong>{{TIME_RANGE}}</strong>
+          {{#if TRANSCRIPT}}
+          <p class="comment">{{TRANSCRIPT}}</p>
+          <div class="score-container">
+            <span class="center-score">center:{{CENTER_SCORE}}</span>
+            <span class="positive-score">positive:{{POSITIVE_SCORE}}</span>
+            <span class="negative-score">negative:{{NEGATIVE_SCORE}}</span>
+          </div>
+          {{/if}}
+          <div class="img_container">
+            <img
+              src="{{SCREENSHOT_PATH}}"
+              alt="動画のスクリーンショット {{START_SECONDS}}秒"
+            />
+          </div>
+        </div>
+        {{/each}}
+      </div>
+
+      <!-- コメントタイムライン -->
+      <div class="timeline" id="timeline2">
+        <h2>コメントのタイムライン</h2>
+        {{#each COMMENT_TIMELINE}}
+        <div class="time-block" id="time_block_{{START_SECONDS}}">
+          <strong>{{TIME_RANGE}}</strong>
+          <div class="comment-list">
+            {{#each COMMENTS}}
+            <p>
+              {{INDEX}} | {{TIME}} - {{#if USER_URL}}
+              <a href="{{USER_URL}}" target="_blank">{{USER_NAME}}</a>
+              {{else}} {{USER_NAME}} {{/if}} :
+              <img
+                src="{{ICON_URL}}"
+                style="width: 30px; height: auto"
+                onerror="this.src='https://secure-dcdn.cdn.nimg.jp/nicoaccount/usericon/defaults/blank.jpg';"
+              />
+              {{TEXT}}<br />
+            </p>
+            {{/each}}
+          </div>
+        </div>
+        {{/each}}
+      </div>
+    </div>
+
+    {{#if OUTRO_CHAT}}
+    <!-- 終了後会話 -->
+    <section>
+      <div class="chat-container">
+        {{#each OUTRO_CHAT}}
+        <div class="chat-message">
+          <div class="message-avatar">
+            <img src="{{ICON_URL}}" alt="{{SPEAKER_NAME}}" />
+            <span class="avatar-name">{{SPEAKER_NAME}}</span>
+          </div>
+          <div class="message-bubble">
+            <p>{{MESSAGE}}</p>
+          </div>
+        </div>
+        {{/each}}
+      </div>
+    </section>
+    {{/if}}
+
+    <!-- プレイヤーコントロール -->
+    <div id="controls-container">
+      <label for="autoJumpToggle">Auto-Jump:</label>
+      <input
+        checked
+        id="autoJumpToggle"
+        name="autoJumpToggle"
+        type="checkbox"
+      />
+      <audio controls id="audioPlayer">
+        <source src="{{AUDIO_FILE}}" type="audio/mp3" />
+        Your browser does not support the audio element.
+      </audio>
+      <input
+        id="seekbar"
+        max="{{DURATION}}"
+        min="0"
+        step="1"
+        type="range"
+        value="0"
+      />
+    </div>
+
+    <!-- メタデータ -->
+    <section>
+      <ol>
+        <li>LiveNum: {{LV_VALUE}}</li>
+        <li>ElapsedTime: {{ELAPSED_TIME}}</li>
+        <li>LiveTitle: {{LIVE_TITLE}}</li>
+        <li>Broadcaster: {{BROADCASTER}}</li>
+        <li>DefaultCommunity: {{COMMUNITY_ID}}</li>
+        <li>OpenTime: {{OPEN_TIME}}</li>
+        <li>StartTime: {{START_TIME_UNIX}}</li>
+        <li>EndTime: {{END_TIME_UNIX}}</li>
+        <li>WatchCount: {{WATCH_COUNT}}</li>
+        <li>CommentCount: {{COMMENT_COUNT}}</li>
+        <li>OwnerId: {{OWNER_ID}}</li>
+      </ol>
+    </section>
+
+    <!-- JavaScript読み込み -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@2.9.4"></script>
+    <script src="../../templates/js/archive-player.js"></script>
+  </body>
+</html>

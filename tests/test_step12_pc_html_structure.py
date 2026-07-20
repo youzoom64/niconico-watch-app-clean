@@ -16,6 +16,14 @@ if str(ROOT / "app") not in sys.path:
 from processors import step12_html_generator as step12
 
 
+def test_comment_timeline_marks_failed_comment_acquisition():
+    failed = step12.render_comment_time_block(0, {}, comments_fetch_failed=True)
+    empty = step12.render_comment_time_block(0, {}, comments_fetch_failed=False)
+
+    assert "コメント取得失敗のため未収録" in failed
+    assert "コメントなし" in empty
+
+
 def test_pc_generator_matches_current_published_layout(tmp_path):
     lv_value = "lv350973849"
     title = "祭"

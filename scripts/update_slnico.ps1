@@ -53,7 +53,6 @@ if ($driveMatch.Success) {
     $downloadUrl = $latest.Url
     $postBody = @{ token = $tokenMatch.Groups['token'].Value; yes = 'Download' }
 }
-
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 $outputPath = Join-Path $OutputDirectory $fileName
 if (Test-Path -LiteralPath $outputPath) {

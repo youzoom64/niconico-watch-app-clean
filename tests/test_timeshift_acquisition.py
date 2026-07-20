@@ -325,6 +325,46 @@ def test_local_comment_processing_accepts_saved_provider_zero_without_api(
     assert completed == 1
 
 
+def test_local_comment_processing_continues_when_timeshift_api_fails(
+    isolated_db: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lv = "lv100"
+    with tracker.connect() as conn:
+        tracker.save_broadcast_archive_meta(
+            conn,
+            {
+                "lv": lv,
+                "raw_json": json.dumps(
+                    {
+                        "source": "user-broadcast-history",
+                        "program": {"statistics": {"comments": {"value": 1}}},
+                    }
+                ),
+            },
+        )
+        conn.commit()
+
+    def fail_download(*_args, **_kwargs):
+        raise ValueError("Failed to reserve timeshift. (HTTP Error 404)")
+
+    monkeypatch.setattr(tracker, "download_timeshift_comments", fail_download)
+    result = tracker.download_and_store_archive_comments(lv, SimpleNamespace())
+
+    assert result["reused"] is True
+    assert result["source"] == "database_fallback"
+    assert result["reason"] == "timeshift_api_failed_fallback"
+    assert result["stored_count"] == 0
+    assert result["expected_count"] == 1
+    assert "HTTP Error 404" in result["acquisition_error"]
+    with tracker.connect() as conn:
+        saved_error = conn.execute(
+            "SELECT comments_fetch_error FROM broadcast_archive_meta WHERE lv = ?",
+            (lv,),
+        ).fetchone()[0]
+    assert "HTTP Error 404" in saved_error
+
+
 def test_processed_video_moves_below_generated_html_directory(
     isolated_db: Path,
     tmp_path: Path,

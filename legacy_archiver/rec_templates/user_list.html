@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <title>{{broadcaster_name}}のリンク一覧</title>
+    <!-- Google Fonts読み込み -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@900&display=swap" rel="stylesheet">
+   
+    <style>
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background-color: black;
+        z-index: -1;
+      }
+
+      #myCanvas {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        z-index: 0;
+        pointer-events: none;
+      }
+
+      .comment-analysis {
+        position: fixed;
+        top: 20px;
+        left: 0;
+        width: 100vw;
+        height: auto;
+        color: white;
+        text-align: center;
+        font-size: 30px;
+        font-family: "Hiragino Kaku Gothic ProN";
+        font-weight: bold;
+        margin: 0;
+        padding: 0;
+        z-index: 1;
+      }
+
+      .link-container {
+        position: relative;
+        top: 60px;
+        left: 0;
+        width: 100vw;
+        height: auto;
+        color: white;
+        text-align: center;
+        font-size: 30px;
+        font-family: "Hiragino Kaku Gothic ProN";
+        font-weight: bold;
+        margin: 0;
+        padding: 0;
+        z-index: 10; /* 1から10に変更 */
+      }
+
+      /* この部分を追加 */
+      .toggle-button,
+      a {
+        position: relative;
+        z-index: 100;
+        pointer-events: auto;
+      }
+      .chat-data {
+        display: none;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        width: 75%;
+      }
+
+      .chat-data table {
+        margin: 0 auto;
+        color: red;
+        text-shadow: 2px 2px 2px rgba(110, 110, 110, 0.5);
+      }
+
+      .link-item {
+        z-index: 1;
+        vertical-align: middle;
+      }
+
+      .background-circle {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle at center,
+          transparent 0%,
+          transparent 0%,
+          black 70%,
+          black 70%
+        );
+        z-index: 3;
+      }
+
+      .image-container {
+        position: relative;
+        width: 400px;
+        height: 400px;
+        margin: 0 auto;
+      }
+
+      .foreground-image {
+        position: absolute;
+        z-index: 0;
+        width: 400px;
+        border-radius: 50%;
+        top: 0;
+        left: 0;
+        filter: sepia(100%);
+      }
+
+      .wave-canvas {
+        position: absolute;
+        z-index: -1;
+        width: 395px;
+        height: 395px;
+        border-radius: 50%;
+        top: 1px;
+        left: 2px;
+      }
+      .eva-mincho {
+          font-family: 'Noto Serif JP', serif;
+          font-weight: 900;
+          display: inline-block;
+          font-size: 1.1em;
+          letter-spacing: 1px;
+          text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
+          margin-left: 8px;
+      }
+      
+      .comment-label {
+          font-family: "Hiragino Kaku Gothic ProN", sans-serif;
+          font-weight: bold;
+          color: white;
+          font-size: 1.2em;
+      }
+    </style>
+  </head>
+<script>
+/**
+ * 放送アイテムを開始時間順にソートする関数（構造対応版）
+ */
+function sortBroadcastItemsByTime() {
+    try {
+        console.log('=== ソート開始 ===');
+        
+        // .link-item を全て取得
+        const linkItems = Array.from(document.querySelectorAll('.link-item'));
+        
+        if (linkItems.length === 0) {
+            console.log('link-item が見つかりません');
+            return;
+        }
+
+        console.log(`ソート対象: ${linkItems.length}個のアイテム`);
+
+        // 各アイテムから時間を抽出
+        const itemsWithTime = linkItems.map((item, index) => {
+            // p.start-time を直接検索
+            const startTimeElement = item.querySelector('p.start-time');
+            let timeValue = new Date(0); // デフォルト値
+            let originalText = '';
+
+            if (startTimeElement) {
+                originalText = startTimeElement.textContent.trim();
+                console.log(`アイテム${index + 1}: "${originalText}"`);
+                
+                // シンプルな正規表現: 年/月/日と時:分を抽出
+                const match = originalText.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})\([^)]+\)\s+(\d{1,2}):(\d{1,2})/);
+                
+                if (match) {
+                    const year = parseInt(match[1]);
+                    const month = parseInt(match[2]) - 1; // 月は0ベース
+                    const day = parseInt(match[3]);
+                    const hour = parseInt(match[4]);
+                    const minute = parseInt(match[5]);
+                    
+                    timeValue = new Date(year, month, day, hour, minute);
+                    console.log(`  → 時間抽出成功: ${hour.toString().padStart(2,'0')}:${minute.toString().padStart(2,'0')}`);
+                } else {
+                    console.log(`  → 時間抽出失敗`);
+                }
+            } else {
+                console.log(`アイテム${index + 1}: start-time要素なし`);
+            }
+
+            return {
+                element: item,
+                timeValue: timeValue,
+                originalText: originalText,
+                timeString: timeValue.getHours().toString().padStart(2,'0') + ':' + timeValue.getMinutes().toString().padStart(2,'0')
+            };
+        });
+
+        // 時間順でソート（昇順：古い→新しい）
+        itemsWithTime.sort((a, b) => a.timeValue.getTime() - b.timeValue.getTime());
+
+        console.log('ソート結果（古い順）:');
+        itemsWithTime.forEach((item, index) => {
+            console.log(`${index + 1}. [${item.timeString}] ${item.originalText}`);
+        });
+
+        // 親要素を取得（.link-containerまたは最初のlink-itemの親）
+        const parentContainer = linkItems[0].parentElement;
+        
+        // 一旦全てのlink-itemを削除
+        linkItems.forEach(item => {
+            item.remove();
+        });
+
+        // ソート済みの要素を逆順（新しい順）で再追加
+        for (let i = itemsWithTime.length - 1; i >= 0; i--) {
+            parentContainer.appendChild(itemsWithTime[i].element);
+        }
+
+        console.log('=== ソート完了（新しい順で表示） ===');
+
+    } catch (error) {
+        console.error('ソート処理エラー:', error);
+        console.error('スタックトレース:', error.stack);
+    }
+}
+
+// 実行タイミング
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM読み込み完了');
+    setTimeout(function() {
+        sortBroadcastItemsByTime();
+    }, 1000); // 1秒待機
+});
+
+// 手動ソート用
+function manualSort() {
+    console.log('手動ソート実行');
+    sortBroadcastItemsByTime();
+}
+
+// デバッグ用：現在のlink-item一覧を表示
+function debugItems() {
+    const items = document.querySelectorAll('.link-item');
+    console.log(`現在のlink-item数: ${items.length}`);
+    items.forEach((item, index) => {
+        const timeElement = item.querySelector('p.start-time');
+        const timeText = timeElement ? timeElement.textContent : '時間要素なし';
+        console.log(`${index + 1}. ${timeText}`);
+    });
+}
+</script>
+  <body>
+    <h1 class="comment-analysis" style="z-index: 10">
+      {{broadcaster_name}}のコメント分析一覧表
+    </h1>
+
+    <br /><br /><br /><br /><br /><br /><br /><br /><br /><br /><br /><br /><br />
+
+    <div
+      class="link-container"
+      style="top: -100px; text-shadow: 2px 2px 2px rgba(105, 105, 105, 0.5)"
+    >
+      <div class="image-container">
+        <div class="background-circle"></div>
+        <img
+          alt="Thumbnail"
+          class="foreground-image"
+          src="{{thumbnail_url}}"
+          style="display: none"
+          onerror="this.src='https://secure-dcdn.cdn.nimg.jp/nicoaccount/usericon/defaults/blank.jpg'"
+        />
+        <canvas class="wave-canvas" height="150" width="150"></canvas>
+        <canvas class="wave-canvas" width="150" height="150"></canvas>
+      </div>
+
+      {{broadcast_items}}
+    </div>
+
+    <canvas height="1080" id="myCanvas" width="1920"></canvas>
+
+    <!-- 直接CDNを指定 -->
+    <script src="https://code.createjs.com/1.0.0/createjs.min.js"></script>
+    <script src="../../templates/particlejs.min.js"></script>
+
+    <script>
+      function toggleDiv(id) {
+        var element = document.getElementById(id);
+        if (element.style.display === "none") {
+          element.style.display = "block";
+          element.style.margin = "0 auto";
+        } else {
+          element.style.display = "none";
+        }
+      }
+    </script>
+
+    <script>
+      // ライブラリが読み込まれているかチェック
+      if (
+        typeof createjs !== "undefined" &&
+        typeof particlejs !== "undefined"
+      ) {
+        var stage = new createjs.Stage("myCanvas");
+        var particleSystem1 = new particlejs.ParticleSystem();
+        stage.addChild(particleSystem1.container);
+
+        particleSystem1.importFromJson({
+          bgColor: "#00000",
+          width: 1024,
+          height: 556,
+          emitFrequency: 27,
+          startX: 200,
+          startXVariance: 0,
+          startY: 800,
+          startYVariance: 0,
+          initialDirection: 90,
+          initialDirectionVariance: 360,
+          initialSpeed: 0.2,
+          initialSpeedVariance: 0,
+          friction: "0.063",
+          accelerationSpeed: 0.2265,
+          accelerationDirection: 270,
+          startScale: 2,
+          startScaleVariance: 0,
+          finishScale: 0,
+          finishScaleVariance: 0.31,
+          lifeSpan: 200,
+          lifeSpanVariance: 7,
+          startAlpha: 1,
+          startAlphaVariance: "0",
+          finishAlpha: 0,
+          finishAlphaVariance: 1,
+          shapeIdList: ["blur_circle"],
+          startColor: {
+            hue: "17",
+            hueVariance: "32",
+            saturation: "91",
+            saturationVariance: 15,
+            luminance: "56",
+            luminanceVariance: "16",
+          },
+          blendMode: true,
+          alphaCurveType: "1",
+          VERSION: "1.0.0",
+        });
+
+        var particleSystem2 = new particlejs.ParticleSystem();
+        stage.addChild(particleSystem2.container);
+
+        particleSystem2.importFromJson({
+          bgColor: "#00000",
+          width: 1024,
+          height: 556,
+          emitFrequency: 27,
+          startX: 1720,
+          startXVariance: 0,
+          startY: 800,
+          startYVariance: 0,
+          initialDirection: 90,
+          initialDirectionVariance: 360,
+          initialSpeed: 0.2,
+          initialSpeedVariance: 0,
+          friction: "0.063",
+          accelerationSpeed: 0.2265,
+          accelerationDirection: 270,
+          startScale: 2,
+          startScaleVariance: 0,
+          finishScale: 0,
+          finishScaleVariance: 0.31,
+          lifeSpan: 200,
+          lifeSpanVariance: 7,
+          startAlpha: 1,
+          startAlphaVariance: "0",
+          finishAlpha: 0,
+          finishAlphaVariance: 1,
+          shapeIdList: ["blur_circle"],
+          startColor: {
+            hue: "17",
+            hueVariance: "32",
+            saturation: "91",
+            saturationVariance: 15,
+            luminance: "56",
+            luminanceVariance: "16",
+          },
+          blendMode: true,
+          alphaCurveType: "1",
+          VERSION: "1.0.0",
+        });
+
+        var snowParticleSystem = new particlejs.ParticleSystem();
+        stage.addChild(snowParticleSystem.container);
+
+        snowParticleSystem.importFromJson({
+          bgColor: "#00000",
+          width: 1920,
+          height: 1080,
+          emitFrequency: 20,
+          startX: 1920 / 2,
+          startXVariance: 1920,
+          startY: -8,
+          startYVariance: 0,
+          initialDirection: 90,
+          initialDirectionVariance: 33,
+          initialSpeed: 1.2,
+          initialSpeedVariance: 0.3,
+          friction: 0,
+          accelerationSpeed: 0,
+          accelerationDirection: 81.6,
+          startScale: 0.15,
+          startScaleVariance: 0.32,
+          finishScale: 0.15,
+          finishScaleVariance: "0",
+          lifeSpan: 1000,
+          lifeSpanVariance: "0",
+          startAlpha: "0.51",
+          startAlphaVariance: "1",
+          finishAlpha: "1",
+          finishAlphaVariance: "0",
+          shapeIdList: ["blur_circle"],
+          startColor: {
+            hue: "0",
+            hueVariance: "0",
+            saturation: "0",
+            saturationVariance: 0,
+            luminance: "100",
+            luminanceVariance: "47",
+          },
+          blendMode: true,
+          alphaCurveType: "0",
+          VERSION: "1.0.0",
+        });
+
+        createjs.Ticker.framerate = 60;
+        createjs.Ticker.on("tick", function () {
+          particleSystem1.update();
+          particleSystem2.update();
+          snowParticleSystem.update();
+          stage.update();
+        });
+      } else {
+        console.log("Particle libraries not loaded");
+      }
+    </script>
+    <script>
+      function applySepiaToCanvas(context, width, height) {
+        const imageData = context.getImageData(0, 0, width, height);
+        const data = imageData.data;
+
+        for (let i = 0; i < data.length; i += 4) {
+          const gray = 0.3 * data[i] + 0.59 * data[i + 1] + 0.11 * data[i + 2];
+          data[i] = gray + 95;
+          data[i + 1] = gray + 58;
+          data[i + 2] = gray;
+        }
+
+        context.putImageData(imageData, 0, 0);
+      }
+
+      window.onload = function () {
+        const imageContainer = document.querySelector(".image-container");
+        const image = document.querySelector(".foreground-image");
+        const canvas = document.createElement("canvas");
+        canvas.className = "wave-canvas";
+        const ctx = canvas.getContext("2d");
+        const img = new Image();
+        img.src = image.src;
+
+        img.onload = function () {
+          const canvasSize = 150;
+          canvas.width = canvasSize;
+          canvas.height = canvasSize;
+
+          const dx = (canvasSize - img.width) / 2;
+          const dy = (canvasSize - img.height) / 2;
+
+          imageContainer.appendChild(canvas);
+          image.style.display = "none";
+
+          animate(dx, dy);
+          applySepiaToCanvas(ctx, canvasSize, canvasSize);
+        };
+
+        let waveAmplitude = 3;
+        let waveFrequency = 0.05;
+        let waveOffset = 10;
+        let waveSpeed = 0.03;
+
+        function animate(dx, dy) {
+          waveOffset += waveSpeed;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          for (let y = 0; y < img.height; y++) {
+            ctx.drawImage(
+              img,
+              0,
+              y,
+              img.width,
+              1,
+              dx + waveAmplitude * Math.sin(y * waveFrequency + waveOffset),
+              dy + y,
+              img.width,
+              1
+            );
+          }
+
+          requestAnimationFrame(() => animate(dx, dy));
+        }
+      };
+    </script>
+  </body>
+</html>

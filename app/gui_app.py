@@ -24,6 +24,7 @@ from bs4 import BeautifulSoup
 from app.generated_html_paths import is_pc_archive_html_candidate
 from PyQt6.QtCore import QAbstractTableModel, QByteArray, QDate, QItemSelectionModel, QModelIndex, QObject, QProcess, QProcessEnvironment, QRunnable, QSize, QThread, QThreadPool, QTimer, Qt, QUrl, pyqtSignal, pyqtSlot
 from PyQt6.QtGui import QAction, QBrush, QColor, QDesktopServices, QLinearGradient, QPainter, QPixmap
+from PyQt6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QAbstractScrollArea,
@@ -1043,8 +1044,8 @@ class TrackerFetchJob(QRunnable):
                             "INFO",
                             f"スペシャルユーザー検出 {lv}: matches={result.get('matches')} linked={result.get('linked')}",
                         )
-                    elif status == "no_special_user_deleted":
-                        self.log("DEBUG", f"スペシャルユーザーなし、放送破棄 {lv}")
+                    elif status in {"no_special_user_checked", "no_special_user_deleted"}:
+                        self.log("DEBUG", f"スペシャルユーザーなし、探索チェック完了 {lv}")
                     elif status == "ended_deleted_api_precheck":
                         self.log(
                             "DEBUG",
@@ -2275,12 +2276,12 @@ class ArchiveTagsTable(QTableWidget):
         if (
             cursor_action == QAbstractItemView.CursorAction.MoveNext
             and self.currentRow() == self.rowCount() - 1
-            and self.currentColumn() == 1
+            and self.currentColumn() == self.columnCount() - 1
         ):
             row = self.rowCount()
             self.insertRow(row)
-            self.setItem(row, 0, QTableWidgetItem(""))
-            self.setItem(row, 1, QTableWidgetItem(""))
+            for column in range(self.columnCount()):
+                self.setItem(row, column, QTableWidgetItem(""))
             QTimer.singleShot(0, lambda: self.editItem(self.item(row, 0)))
             return self.model().index(row, 0)
         return super().moveCursor(cursor_action, modifiers)
@@ -4197,6 +4198,7 @@ class MonitoredBroadcasterEditorDialog(QDialog):
     def __init__(self, broadcaster: dict[str, Any], parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.original = dict(broadcaster)
+        self.archive_tags_ui_state_path = APP_ROOT / "data" / "archive_tags_table_ui.json"
         self.setWindowTitle("監視配信者編集")
         self.resize(1120, 760)
         self.setMinimumSize(820, 560)
@@ -4209,9 +4211,24 @@ class MonitoredBroadcasterEditorDialog(QDialog):
         self.archive_tags = QWidget()
         archive_tags_layout = QVBoxLayout(self.archive_tags)
         archive_tags_layout.setContentsMargins(0, 0, 0, 0)
-        self.archive_tags_table = ArchiveTagsTable(0, 2)
-        self.archive_tags_table.setHorizontalHeaderLabels(["認識支援文字", "正式タグ"])
-        self.archive_tags_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.archive_tags_table = ArchiveTagsTable(0, 3)
+        self.archive_tags_table.setHorizontalHeaderLabels(
+            ["認識支援文字", "正式タグ", "別名（,区切り）"]
+        )
+        self.archive_tags_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Interactive
+        )
+        self.archive_tags_table.horizontalHeader().setMinimumSectionSize(80)
+        self.archive_tags_table.setColumnWidth(0, 220)
+        self.archive_tags_table.setColumnWidth(1, 220)
+        self.archive_tags_table.setColumnWidth(2, 420)
+        self.archive_tags_table.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOn
+        )
+        self.archive_tags_table.setHorizontalScrollMode(
+            QAbstractItemView.ScrollMode.ScrollPerPixel
+        )
+        self.restore_archive_tags_table_ui()
         self.archive_tags_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.archive_tags_table.setMinimumHeight(180)
         archive_tags_layout.addWidget(self.archive_tags_table)
@@ -4224,6 +4241,30 @@ class MonitoredBroadcasterEditorDialog(QDialog):
         archive_tag_buttons.addWidget(remove_archive_tag)
         archive_tag_buttons.addStretch(1)
         archive_tags_layout.addLayout(archive_tag_buttons)
+        self.transcription_hotwords_enabled = QCheckBox(
+            "認識支援文字を文字起こしのHotwordsに使う"
+        )
+        self.transcription_hotwords_enabled.setChecked(
+            bool(broadcaster.get("transcription_hotwords_enabled", 1))
+        )
+        archive_tags_layout.addWidget(self.transcription_hotwords_enabled)
+        self.person_aliases_path = (
+            tracker.broadcaster_target_dir(str(broadcaster.get("broadcaster_id") or ""))
+            / "index_person_aliases.json"
+        )
+        self.person_aliases_payload: dict[str, Any] = {}
+        try:
+            loaded_aliases = json.loads(
+                self.person_aliases_path.read_text(encoding="utf-8-sig")
+            )
+            if isinstance(loaded_aliases, dict):
+                self.person_aliases_payload = loaded_aliases
+        except (OSError, json.JSONDecodeError):
+            self.person_aliases_payload = {}
+        canonical_aliases = self.person_aliases_payload.get("canonical_names")
+        if not isinstance(canonical_aliases, dict):
+            canonical_aliases = {}
+        loaded_canonical_names: set[str] = set()
         for raw_line in str(broadcaster.get("archive_tags") or "").replace("\r", "").split("\n"):
             line = raw_line.strip()
             if not line:
@@ -4232,7 +4273,25 @@ class MonitoredBroadcasterEditorDialog(QDialog):
                 recognition, canonical = (part.strip() for part in line.split("=>", 1))
             else:
                 recognition = canonical = line
-            self.add_archive_tag_row(recognition, canonical)
+            aliases = canonical_aliases.get(canonical, [])
+            self.add_archive_tag_row(
+                recognition,
+                canonical,
+                ", ".join(str(alias).strip() for alias in aliases if str(alias).strip())
+                if isinstance(aliases, list) else "",
+            )
+            loaded_canonical_names.add(canonical)
+        for canonical, aliases in canonical_aliases.items():
+            canonical = str(canonical or "").strip()
+            if not canonical or canonical in loaded_canonical_names:
+                continue
+            self.add_archive_tag_row(
+                canonical,
+                canonical,
+                ", ".join(str(alias).strip() for alias in aliases if str(alias).strip())
+                if isinstance(aliases, list) else "",
+                include_in_archive_tags=False,
+            )
 
         self.enabled = QCheckBox("監視を有効にする")
         self.enabled.setChecked(bool(broadcaster.get("enabled", 1)))
@@ -4445,14 +4504,59 @@ class MonitoredBroadcasterEditorDialog(QDialog):
         layout.addWidget(QLabel(label))
         layout.addWidget(widget)
 
-    def add_archive_tag_row(self, recognition: str = "", canonical: str = "") -> None:
+    def add_archive_tag_row(
+        self,
+        recognition: str = "",
+        canonical: str = "",
+        aliases: str = "",
+        include_in_archive_tags: bool = True,
+    ) -> None:
         row = self.archive_tags_table.rowCount()
         self.archive_tags_table.insertRow(row)
-        self.archive_tags_table.setItem(row, 0, QTableWidgetItem(str(recognition)))
+        recognition_item = QTableWidgetItem(str(recognition))
+        recognition_item.setData(Qt.ItemDataRole.UserRole, include_in_archive_tags)
+        self.archive_tags_table.setItem(row, 0, recognition_item)
         self.archive_tags_table.setItem(row, 1, QTableWidgetItem(str(canonical)))
-        if not recognition and not canonical:
+        self.archive_tags_table.setItem(row, 2, QTableWidgetItem(str(aliases)))
+        if not recognition and not canonical and not aliases:
             self.archive_tags_table.setCurrentCell(row, 0)
             self.archive_tags_table.editItem(self.archive_tags_table.item(row, 0))
+
+    def restore_archive_tags_table_ui(self) -> None:
+        try:
+            state = json.loads(
+                self.archive_tags_ui_state_path.read_text(encoding="utf-8")
+            )
+            apply_table_header_state(self.archive_tags_table, state.get("header"))
+            apply_table_column_widths(self.archive_tags_table, state.get("widths"))
+            QTimer.singleShot(
+                0,
+                lambda: self.archive_tags_table.horizontalScrollBar().setValue(
+                    int(state.get("horizontal_scroll") or 0)
+                ),
+            )
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pass
+
+    def save_archive_tags_table_ui(self) -> None:
+        try:
+            self.archive_tags_ui_state_path.parent.mkdir(parents=True, exist_ok=True)
+            state = {
+                "header": table_header_state(self.archive_tags_table),
+                "widths": table_column_widths(self.archive_tags_table),
+                "horizontal_scroll": self.archive_tags_table.horizontalScrollBar().value(),
+            }
+            temporary = self.archive_tags_ui_state_path.with_suffix(".json.tmp")
+            temporary.write_text(
+                json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            temporary.replace(self.archive_tags_ui_state_path)
+        except OSError:
+            append_app_log(traceback.format_exc(), "DEBUG")
+
+    def done(self, result: int) -> None:
+        self.save_archive_tags_table_ui()
+        super().done(result)
 
     def remove_archive_tag_rows(self) -> None:
         rows = sorted({index.row() for index in self.archive_tags_table.selectedIndexes()}, reverse=True)
@@ -4464,6 +4568,8 @@ class MonitoredBroadcasterEditorDialog(QDialog):
         for row in range(self.archive_tags_table.rowCount()):
             left = self.archive_tags_table.item(row, 0)
             right = self.archive_tags_table.item(row, 1)
+            if left and left.data(Qt.ItemDataRole.UserRole) is False:
+                continue
             recognition = left.text().strip() if left else ""
             canonical = right.text().strip() if right else ""
             if not recognition and not canonical:
@@ -4472,6 +4578,32 @@ class MonitoredBroadcasterEditorDialog(QDialog):
             canonical = canonical or recognition
             lines.append(canonical if recognition == canonical else f"{recognition} => {canonical}")
         return "\n".join(lines)
+
+    def save_person_aliases(self) -> None:
+        canonical_names: dict[str, list[str]] = {}
+        for row in range(self.archive_tags_table.rowCount()):
+            canonical_item = self.archive_tags_table.item(row, 1)
+            aliases_item = self.archive_tags_table.item(row, 2)
+            canonical = canonical_item.text().strip() if canonical_item else ""
+            if not canonical:
+                continue
+            aliases = [
+                value.strip()
+                for value in str(aliases_item.text() if aliases_item else "").split(",")
+                if value.strip()
+            ]
+            canonical_names[canonical] = list(
+                dict.fromkeys([*canonical_names.get(canonical, []), *aliases])
+            )
+        payload = dict(self.person_aliases_payload)
+        payload["canonical_names"] = canonical_names
+        self.person_aliases_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.person_aliases_path.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(self.person_aliases_path)
 
     def make_prompt_editor(self, value: Any) -> QTextEdit:
         editor = QTextEdit()
@@ -4549,6 +4681,7 @@ class MonitoredBroadcasterEditorDialog(QDialog):
             "whisperx_model": self.whisperx_model.currentText(),
             "whisperx_enabled": int(whisperx_enabled),
             "transcription_initial_prompt": self.transcription_initial_prompt.text().strip(),
+            "transcription_hotwords_enabled": int(self.transcription_hotwords_enabled.isChecked()),
             "speaker_diarization_enabled": int(whisperx_enabled and self.speaker_diarization_enabled.isChecked()),
             "diarization_min_speakers": self.diarization_min_speakers.value(),
             "diarization_max_speakers": self.diarization_max_speakers.value(),
@@ -4720,6 +4853,7 @@ class BroadcasterMonitorTab(QWidget):
         dialog = MonitoredBroadcasterEditorDialog(row, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             tracker.save_monitored_broadcaster_details(broadcaster_id, dialog.values())
+            dialog.save_person_aliases()
             self.reload()
             show_status(self, f"監視配信者編集: {broadcaster_id}")
 
@@ -8021,11 +8155,13 @@ class TimeshiftFinalizeJob(QRunnable):
 
 class TimeshiftLocalFilesTab(QWidget):
     archive_step_names = list(FINALIZE_LEGACY_STEP_DISPLAY_NAMES)
+    file_dialog_state_path = tracker.DATA_DIR / "timeshift_local_files_ui.json"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.paths: list[Path] = []
         self.active_job: TimeshiftFinalizeJob | None = None
+        self.last_video_directory = self.load_last_video_directory()
 
         explanation = QLabel(
             "ローカルに保存済みの動画を複数D&Dしてください。lvごとに保存済みコメントを確認し、必要な場合だけコメントAPIを取得してから、parsec=0で処理します。動画は連結せずMP3だけ連結します。\n"
@@ -8100,10 +8236,39 @@ class TimeshiftLocalFilesTab(QWidget):
         paths, _filter = QFileDialog.getOpenFileNames(
             self,
             "タイムシフト動画を選択",
-            "",
+            str(self.last_video_directory) if self.last_video_directory else "",
             "動画 (*.mp4 *.mkv *.webm *.flv *.ts);;すべて (*)",
         )
+        if paths:
+            self.last_video_directory = Path(paths[0]).parent
+            self.save_last_video_directory()
         self.add_paths([Path(path) for path in paths])
+
+    def load_last_video_directory(self) -> Path | None:
+        try:
+            payload = json.loads(self.file_dialog_state_path.read_text(encoding="utf-8-sig"))
+            directory = Path(str(payload.get("last_video_directory") or "").strip())
+            return directory if directory.is_dir() else None
+        except Exception:
+            return None
+
+    def save_last_video_directory(self) -> None:
+        if self.last_video_directory is None:
+            return
+        try:
+            self.file_dialog_state_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.file_dialog_state_path.with_suffix(".json.tmp")
+            temporary.write_text(
+                json.dumps(
+                    {"last_video_directory": str(self.last_video_directory)},
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            temporary.replace(self.file_dialog_state_path)
+        except Exception:
+            append_app_log(traceback.format_exc(), "DEBUG")
 
     @pyqtSlot(object)
     def add_paths(self, paths) -> None:
@@ -8256,26 +8421,415 @@ class BroadcastTagEditJob(QRunnable):
             self.signals.finished.emit({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
 
 
+class IntervalTranscriptionJob(QRunnable):
+    def __init__(self, broadcaster_id: str, lv: str, start: float, end: float, db_ids: list[int], row: int) -> None:
+        super().__init__()
+        self.broadcaster_id = broadcaster_id
+        self.lv = lv
+        self.start = float(start)
+        self.end = float(end)
+        self.db_ids = list(db_ids)
+        self.row = row
+        self.signals = TimeshiftAcquireSignals()
+
+    @pyqtSlot()
+    def run(self) -> None:
+        temporary_audio: Path | None = None
+        try:
+            target_dir = tracker.broadcast_target_dir(
+                self.lv, tracker.load_config(), broadcaster_id=self.broadcaster_id
+            )
+            source_audio = target_dir / f"{self.lv}_audio.mp3"
+            if not source_audio.is_file():
+                raise FileNotFoundError(f"音声ファイルがありません: {source_audio}")
+            duration = max(0.1, self.end - self.start)
+            self.signals.progress.emit("区間音声を切り出しています")
+            work_dir = target_dir / "_interval_transcription"
+            work_dir.mkdir(parents=True, exist_ok=True)
+            temporary_audio = work_dir / f"{self.lv}_{int(self.start * 1000)}_{int(self.end * 1000)}.wav"
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-ss", f"{self.start:.3f}", "-i", str(source_audio),
+                    "-t", f"{duration:.3f}", "-vn", "-ac", "1", "-ar", "16000", str(temporary_audio),
+                ],
+                check=True,
+                capture_output=True,
+                timeout=max(60, int(duration * 4)),
+            )
+            settings = tracker.resolve_monitored_broadcaster_transcription_settings(
+                self.lv, broadcaster_id=self.broadcaster_id
+            )
+            self.signals.progress.emit(
+                f"Faster-Whisper認識中 model={settings['faster_whisper_model']}（初回はモデル読込に時間がかかります）"
+            )
+            tracker.transcribe_audio_with_faster_whisper(
+                self.lv,
+                temporary_audio,
+                model_size=str(settings["faster_whisper_model"]),
+                target_dir=target_dir,
+                timeline_offset_seconds=self.start,
+                timeline_end_seconds=self.end,
+                replace_scope="source",
+                mark_postprocess_done=False,
+                initial_prompt=str(settings["initial_prompt"]),
+                hotwords=str(settings["hotwords"]),
+                progress_callback=self.signals.progress.emit,
+            )
+            self.signals.progress.emit("認識結果をDBとJSONへ反映しています")
+            with tracker.connect() as conn:
+                generated = conn.execute(
+                    "SELECT id, text FROM archive_transcript_segments "
+                    "WHERE lv = ? AND source_audio_path = ? ORDER BY start_seconds, id",
+                    (self.lv, str(temporary_audio)),
+                ).fetchall()
+                text_value = " ".join(str(item["text"] or "").strip() for item in generated).strip()
+                conn.execute(
+                    "DELETE FROM archive_transcript_segments WHERE lv = ? AND source_audio_path = ?",
+                    (self.lv, str(temporary_audio)),
+                )
+                if self.db_ids:
+                    primary_id = self.db_ids[0]
+                    old = conn.execute(
+                        "SELECT raw_json FROM archive_transcript_segments WHERE id = ? AND lv = ?",
+                        (primary_id, self.lv),
+                    ).fetchone()
+                    raw = json.loads(str(old["raw_json"] or "{}")) if old else {}
+                    raw["text"] = text_value
+                    conn.execute(
+                        "UPDATE archive_transcript_segments SET text = ?, raw_json = ? WHERE id = ? AND lv = ?",
+                        (text_value, json.dumps(raw, ensure_ascii=False), primary_id, self.lv),
+                    )
+                    if len(self.db_ids) > 1:
+                        placeholders = ",".join("?" for _ in self.db_ids[1:])
+                        conn.execute(
+                            f"DELETE FROM archive_transcript_segments WHERE lv = ? AND id IN ({placeholders})",
+                            (self.lv, *self.db_ids[1:]),
+                        )
+                    saved_id = primary_id
+                else:
+                    tracker.save_transcript_segments(
+                        conn,
+                        self.lv,
+                        [{"start_seconds": self.start, "end_seconds": self.end, "text": text_value}],
+                        source_audio_path=str(source_audio),
+                        model=f"faster-whisper:{settings['faster_whisper_model']}",
+                    )
+                    saved_id = int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+                tracker.export_legacy_transcript_file_from_db(conn, self.lv, target_dir=target_dir)
+                conn.commit()
+            self.signals.finished.emit(
+                {"ok": True, "row": self.row, "db_id": saved_id, "text": text_value}
+            )
+        except Exception as exc:
+            self.signals.finished.emit({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+        finally:
+            if temporary_audio is not None:
+                temporary_audio.unlink(missing_ok=True)
+
+
+class DisappearedUrlScanJob(QRunnable):
+    def __init__(self, broadcaster_id: str) -> None:
+        super().__init__()
+        self.broadcaster_id = broadcaster_id
+        self.signals = TimeshiftAcquireSignals()
+
+    @pyqtSlot()
+    def run(self) -> None:
+        try:
+            path = DisappearedBroadcastUrlTab.path_for(self.broadcaster_id)
+            account_dir = path.parent
+            index_path = account_dir / "index.html"
+            lvs: list[str] = []
+            if index_path.is_file():
+                document = index_path.read_text(encoding="utf-8-sig", errors="replace")
+                match = re.search(
+                    r'<script\b[^>]*\bid=["\']archive-data["\'][^>]*>(.*?)</script>',
+                    document,
+                    re.IGNORECASE | re.DOTALL,
+                )
+                if match:
+                    records = json.loads(match.group(1))
+                    if isinstance(records, list):
+                        lvs.extend(
+                            str(row.get("lv") or "").strip().lower()
+                            for row in records if isinstance(row, dict)
+                        )
+            if not lvs:
+                lvs.extend(item.name.lower() for item in account_dir.glob("lv*") if item.is_dir())
+            lvs = sorted({lv for lv in lvs if re.fullmatch(r"lv\d+", lv)})
+            if not lvs:
+                raise RuntimeError("生成済み放送が見つかりません")
+            self.signals.progress.emit(f"生成済み放送{len(lvs)}件の実URL確認を開始")
+            session = requests.Session()
+            session.headers.update({"User-Agent": "Mozilla/5.0 niconico-watch-app"})
+            deleted: list[str] = []
+            errors: list[str] = []
+            for index, lv in enumerate(lvs, start=1):
+                try:
+                    response = session.get(
+                        f"https://live.nicovideo.jp/watch/{lv}", timeout=20, allow_redirects=True
+                    )
+                    if response.status_code == 404:
+                        deleted.append(lv)
+                        self.signals.progress.emit(f"消滅検出: {lv} ({index}/{len(lvs)})")
+                    elif response.status_code != 200:
+                        errors.append(f"{lv}: HTTP {response.status_code}")
+                except Exception as exc:
+                    errors.append(f"{lv}: {type(exc).__name__}: {exc}")
+            payload: dict[str, Any] = {}
+            if path.is_file():
+                loaded = json.loads(path.read_text(encoding="utf-8-sig"))
+                payload = loaded if isinstance(loaded, dict) else {}
+            registered = payload.get("_history_deleted", [])
+            registered = [str(value).strip() for value in registered] if isinstance(registered, list) else []
+            payload["_history_deleted"] = sorted(set([*registered, *deleted]))
+            urls = payload.get("_history_deleted_urls", {})
+            urls = dict(urls) if isinstance(urls, dict) else {}
+            for lv in deleted:
+                urls[lv] = f"https://live.nicovideo.jp/watch/{lv}"
+            payload["_history_deleted_urls"] = urls
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_suffix(".json.tmp")
+            temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            temporary.replace(path)
+            if deleted:
+                anchor = deleted[-1]
+                tracker.run_legacy_archiver_steps(
+                    anchor,
+                    account_id=self.broadcaster_id,
+                    steps=[
+                        "step13_index_generator",
+                        "step14_modern_list_generator",
+                        "step15_lolipop_uploader",
+                    ],
+                    upload_html_only=True,
+                    progress_callback=self.signals.progress.emit,
+                )
+            self.signals.finished.emit(
+                {"ok": True, "deleted": deleted, "checked": len(lvs), "errors": errors}
+            )
+        except Exception as exc:
+            self.signals.finished.emit({"ok": False, "error": f"{type(exc).__name__}: {exc}"})
+
+
+class DisappearedBroadcastUrlTab(QWidget):
+    """ニコニコの放送履歴から消えた放送を一覧表示用に手動登録する。"""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.active_job: BroadcastTagEditJob | None = None
+        self.scan_job: DisappearedUrlScanJob | None = None
+        self.broadcaster_edit = QLineEdit("39532023")
+        self.broadcaster_edit.setPlaceholderText("配信者ID")
+        self.url_edit = QLineEdit()
+        self.url_edit.setPlaceholderText(
+            "https://warehouse.bitter.jp/niconico/39532023/lv350997452/lv350997452_あ.html"
+        )
+        self.register_button = QPushButton("消滅URLとして登録")
+        self.unregister_button = QPushButton("登録を解除")
+        self.scan_button = QPushButton("生成済み全放送を確認して自動登録")
+        self.register_button.clicked.connect(lambda: self.set_registered(True))
+        self.unregister_button.clicked.connect(lambda: self.set_registered(False))
+        self.scan_button.clicked.connect(self.scan_all)
+        self.table = QTableWidget(0, 2)
+        self.table.setHorizontalHeaderLabels(["LV", "消滅した放送URL"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.status_view = QTextEdit()
+        self.status_view.setReadOnly(True)
+        self.status_view.setMaximumHeight(110)
+
+        layout = QVBoxLayout(self)
+        explanation = QLabel(
+            "ニコニコの放送履歴から削除された放送URLを登録します。登録した放送はindex.htmlで心拍状に赤く点滅します。"
+        )
+        explanation.setWordWrap(True)
+        layout.addWidget(explanation)
+        broadcaster_row = QHBoxLayout()
+        broadcaster_row.addWidget(QLabel("配信者ID"))
+        broadcaster_row.addWidget(self.broadcaster_edit, 1)
+        broadcaster_row.addWidget(self.scan_button)
+        layout.addLayout(broadcaster_row)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("放送URL / lv"))
+        row.addWidget(self.url_edit, 1)
+        row.addWidget(self.register_button)
+        row.addWidget(self.unregister_button)
+        layout.addLayout(row)
+        layout.addWidget(self.table, 1)
+        layout.addWidget(self.status_view)
+        self.url_edit.returnPressed.connect(lambda: self.set_registered(True))
+        self.reload_table(self.broadcaster_edit.text().strip())
+
+    def identity(self) -> tuple[str, str, str]:
+        source = self.url_edit.text().strip()
+        match = re.search(r"lv\d+", source, re.IGNORECASE)
+        lv = match.group(0).lower() if match else ""
+        account_match = re.search(r"/niconico/(\d+)/", source, re.IGNORECASE)
+        broadcaster_id = account_match.group(1) if account_match else ""
+        if lv and not broadcaster_id:
+            with tracker.connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT broadcaster_id FROM broadcast_archive_meta WHERE lv = ?
+                    UNION ALL SELECT broadcaster_id FROM recording_jobs WHERE lv = ?
+                    LIMIT 1
+                    """,
+                    (lv, lv),
+                ).fetchone()
+            broadcaster_id = str(row["broadcaster_id"] or "").strip() if row else ""
+        if not broadcaster_id or not lv:
+            raise ValueError("URLから配信者IDとlv番号を特定できません")
+        url = source if source.startswith(("http://", "https://")) else f"https://live.nicovideo.jp/watch/{lv}"
+        return broadcaster_id, lv, url
+
+    @staticmethod
+    def path_for(broadcaster_id: str) -> Path:
+        root = tracker.niconico_platform_target_root(tracker.load_config()) / broadcaster_id
+        for name in ("broadcast", "bloadcast"):
+            candidate = root / name
+            if candidate.is_dir():
+                return candidate / "index_person_tags.json"
+        return root / "broadcast" / "index_person_tags.json"
+
+    def set_registered(self, enabled: bool) -> None:
+        try:
+            broadcaster_id, lv, url = self.identity()
+            path = self.path_for(broadcaster_id)
+            payload: dict[str, Any] = {}
+            if path.is_file():
+                loaded = json.loads(path.read_text(encoding="utf-8-sig"))
+                payload = loaded if isinstance(loaded, dict) else {}
+            values = payload.get("_history_deleted", [])
+            values = [str(value).strip() for value in values] if isinstance(values, list) else []
+            if enabled and lv not in values:
+                values.append(lv)
+            if not enabled:
+                values = [value for value in values if value != lv]
+            if values:
+                payload["_history_deleted"] = sorted(set(values))
+            else:
+                payload.pop("_history_deleted", None)
+            urls = payload.get("_history_deleted_urls", {})
+            urls = dict(urls) if isinstance(urls, dict) else {}
+            if enabled:
+                urls[lv] = url
+            else:
+                urls.pop(lv, None)
+            if urls:
+                payload["_history_deleted_urls"] = urls
+            else:
+                payload.pop("_history_deleted_urls", None)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_suffix(".json.tmp")
+            temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            temporary.replace(path)
+            self.reload_table(broadcaster_id)
+            self.status_view.append(f"{lv}: {'登録' if enabled else '解除'}しました。一覧を再生成します")
+            self.register_button.setEnabled(False)
+            self.unregister_button.setEnabled(False)
+            self.active_job = BroadcastTagEditJob(broadcaster_id, lv, True)
+            self.active_job.signals.progress.connect(self.status_view.append)
+            self.active_job.signals.finished.connect(self.finished)
+            QThreadPool.globalInstance().start(self.active_job)
+        except Exception as exc:
+            QMessageBox.critical(self, "消滅URL登録", str(exc))
+
+    def scan_all(self) -> None:
+        broadcaster_id = self.broadcaster_edit.text().strip()
+        if not broadcaster_id.isdigit() or self.scan_job is not None:
+            return
+        self.scan_button.setEnabled(False)
+        self.scan_job = DisappearedUrlScanJob(broadcaster_id)
+        self.scan_job.signals.progress.connect(self.status_view.append)
+        self.scan_job.signals.finished.connect(self.scan_finished)
+        QThreadPool.globalInstance().start(self.scan_job)
+
+    @pyqtSlot(object)
+    def scan_finished(self, result: dict[str, Any]) -> None:
+        broadcaster_id = self.broadcaster_edit.text().strip()
+        if result.get("ok"):
+            deleted = result.get("deleted") or []
+            errors = result.get("errors") or []
+            self.reload_table(broadcaster_id)
+            self.status_view.append(
+                f"一括確認完了: 確認{result.get('checked')}件 / 消滅{len(deleted)}件 / 確認失敗{len(errors)}件"
+            )
+        else:
+            self.status_view.append(f"一括確認失敗: {result.get('error')}")
+        self.scan_job = None
+        self.scan_button.setEnabled(True)
+
+    def reload_table(self, broadcaster_id: str) -> None:
+        path = self.path_for(broadcaster_id)
+        payload = json.loads(path.read_text(encoding="utf-8-sig")) if path.is_file() else {}
+        values = payload.get("_history_deleted", []) if isinstance(payload, dict) else []
+        urls = payload.get("_history_deleted_urls", {}) if isinstance(payload, dict) else {}
+        urls = urls if isinstance(urls, dict) else {}
+        self.table.setRowCount(0)
+        for lv in values if isinstance(values, list) else []:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            self.table.setItem(row, 0, QTableWidgetItem(str(lv)))
+            self.table.setItem(row, 1, QTableWidgetItem(str(urls.get(str(lv), ""))))
+
+    @pyqtSlot(object)
+    def finished(self, result: dict[str, Any]) -> None:
+        self.status_view.append("再生成・アップロード完了" if result.get("ok") else f"失敗: {result.get('error')}")
+        self.active_job = None
+        self.register_button.setEnabled(True)
+        self.unregister_button.setEnabled(True)
+
+
 class TimeshiftTagEditorTab(QWidget):
     """放送単位の人物タグ追加・誤検出除外を編集する。"""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.active_job: BroadcastTagEditJob | None = None
+        self.interval_job: IntervalTranscriptionJob | None = None
+        self.interval_play_end_ms = 0
+        self.interval_audio_output = QAudioOutput(self)
+        self.interval_player = QMediaPlayer(self)
+        self.interval_player.setAudioOutput(self.interval_audio_output)
+        self.interval_player.positionChanged.connect(self.on_interval_audio_position)
         self.loaded_tags: list[str] = []
         self.broadcaster_edit = QLineEdit()
         self.broadcaster_edit.setPlaceholderText("配信者ID（例: 39532023）")
         self.lv_edit = QLineEdit()
         self.lv_edit.setPlaceholderText("lv番号または放送URL")
+        self.load_url_button = QPushButton("URLから呼び出す")
+        self.load_url_button.clicked.connect(self.load_values)
         self.tags_table = QTableWidget(0, 1)
         self.tags_table.setHorizontalHeaderLabels(["このHTMLのタグ（チェックなし＝除外）"])
         self.tags_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.tags_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.tags_table.setMaximumHeight(170)
-        self.transcript_table = QTableWidget(0, 2)
-        self.transcript_table.setHorizontalHeaderLabels(["時間", "文字起こし（文字を直接修正）"])
-        self.transcript_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.transcript_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.transcript_table = QTableWidget(0, 4)
+        self.transcript_table.setHorizontalHeaderLabels(
+            ["時間", "文字起こし（文字を直接修正）", "再生操作", "区間再処理"]
+        )
+        self.transcript_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Interactive
+        )
+        self.transcript_table.horizontalHeader().setStretchLastSection(False)
+        self.transcript_table.horizontalHeader().setMinimumSectionSize(80)
+        self.transcript_table.setColumnWidth(0, 220)
+        self.transcript_table.setColumnWidth(1, 900)
+        self.transcript_table.setColumnWidth(2, 150)
+        self.transcript_table.setColumnWidth(3, 190)
+        self.transcript_table.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOn
+        )
+        self.transcript_table.setHorizontalScrollMode(
+            QAbstractItemView.ScrollMode.ScrollPerPixel
+        )
+        self.transcript_table.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self.transcript_table.setWordWrap(True)
+        self.transcript_table.verticalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
         self.transcript_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         load_button = QPushButton("現在の修正を読込")
         load_button.clicked.connect(self.load_values)
@@ -8288,13 +8842,15 @@ class TimeshiftTagEditorTab(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("放送ごとにタグを追加、または誤検出タグを除外します。文字起こし本文は変更しません。"))
-        for label, widget in (
-            ("配信者ID", self.broadcaster_edit), ("放送URL / lv", self.lv_edit),
-        ):
-            row = QHBoxLayout()
-            row.addWidget(QLabel(label))
-            row.addWidget(widget, 1)
-            layout.addLayout(row)
+        broadcaster_row = QHBoxLayout()
+        broadcaster_row.addWidget(QLabel("配信者ID"))
+        broadcaster_row.addWidget(self.broadcaster_edit, 1)
+        layout.addLayout(broadcaster_row)
+        url_row = QHBoxLayout()
+        url_row.addWidget(QLabel("放送URL / lv"))
+        url_row.addWidget(self.lv_edit, 1)
+        url_row.addWidget(self.load_url_button)
+        layout.addLayout(url_row)
         layout.addWidget(self.tags_table)
         layout.addWidget(self.transcript_table, 1)
         buttons = QHBoxLayout()
@@ -8305,6 +8861,14 @@ class TimeshiftTagEditorTab(QWidget):
         layout.addLayout(buttons)
         self.status_view.setMaximumHeight(110)
         layout.addWidget(self.status_view)
+
+    @staticmethod
+    def format_transcript_time(seconds: float) -> str:
+        total = max(0.0, float(seconds))
+        hours = int(total // 3600)
+        minutes = int((total % 3600) // 60)
+        remaining_seconds = total % 60
+        return f"{hours:02d}:{minutes:02d}:{remaining_seconds:05.2f}"
 
     @staticmethod
     def _names(text: str) -> list[str]:
@@ -8319,8 +8883,22 @@ class TimeshiftTagEditorTab(QWidget):
             self.broadcaster_edit.setText(broadcaster_id)
         match = re.search(r"lv\d+", source, re.IGNORECASE)
         lv = match.group(0).lower() if match else ""
+        if lv and not broadcaster_id:
+            with tracker.connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT broadcaster_id FROM broadcast_archive_meta WHERE lv = ?
+                    UNION ALL
+                    SELECT broadcaster_id FROM recording_jobs WHERE lv = ?
+                    LIMIT 1
+                    """,
+                    (lv, lv),
+                ).fetchone()
+            if row:
+                broadcaster_id = str(row["broadcaster_id"] or "").strip()
+                self.broadcaster_edit.setText(broadcaster_id)
         if not broadcaster_id or not lv:
-            raise ValueError("配信者IDとlv番号を入力してください")
+            raise ValueError("URLから配信者IDを特定できません。配信者IDも入力してください")
         return broadcaster_id, lv
 
     def _path(self, broadcaster_id: str) -> Path:
@@ -8377,21 +8955,139 @@ class TimeshiftTagEditorTab(QWidget):
                     "SELECT id, start_seconds, end_seconds, text FROM archive_transcript_segments "
                     "WHERE lv = ? ORDER BY start_seconds, id", (lv,),
                 ).fetchall()
+                duration_row = conn.execute(
+                    "SELECT MAX(timeline_start_seconds + duration_seconds) AS total "
+                    "FROM recording_segments WHERE lv = ?",
+                    (lv,),
+                ).fetchone()
+            total_seconds = float(duration_row["total"] or 0) if duration_row else 0.0
+            if rows:
+                total_seconds = max(
+                    total_seconds, max(float(segment["end_seconds"] or 0) for segment in rows)
+                )
+            grouped: dict[int, list[Any]] = {}
             for segment in rows:
+                block_start = int(math.floor(float(segment["start_seconds"] or 0) / 10.0) * 10)
+                grouped.setdefault(block_start, []).append(segment)
+            empty_ranges = 0
+            for start in range(0, int(math.ceil(total_seconds / 10.0) * 10), 10):
+                end = start + 10.0
+                segments = grouped.get(start, [])
                 row = self.transcript_table.rowCount()
                 self.transcript_table.insertRow(row)
-                start = float(segment["start_seconds"] or 0)
-                end = float(segment["end_seconds"] or start)
-                time_item = QTableWidgetItem(f"{start:.2f} - {end:.2f}")
+                time_item = QTableWidgetItem(
+                    f"{self.format_transcript_time(start)} - {self.format_transcript_time(end)}"
+                )
                 time_item.setFlags(time_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                time_item.setData(Qt.ItemDataRole.UserRole, int(segment["id"]))
+                db_ids = [int(segment["id"]) for segment in segments]
+                time_item.setData(Qt.ItemDataRole.UserRole, db_ids)
                 self.transcript_table.setItem(row, 0, time_item)
-                self.transcript_table.setItem(row, 1, QTableWidgetItem(str(segment["text"] or "")))
+                self.transcript_table.setItem(
+                    row,
+                    1,
+                    QTableWidgetItem("\n".join(str(segment["text"] or "") for segment in segments)),
+                )
+                self.install_interval_controls(
+                    row, float(start), end, db_ids
+                )
+                if not segments:
+                    empty_ranges += 1
             self.status_view.append(
-                f"{lv}: タグ{len(self.loaded_tags)}件 / 文字起こし{len(rows)}件を読み込みました"
+                f"{lv}: タグ{len(self.loaded_tags)}件 / 文字起こし{len(rows)}件 / "
+                f"空区間{empty_ranges}件を読み込みました"
             )
         except Exception as exc:
             QMessageBox.critical(self, "タグ修正", str(exc))
+
+    def install_interval_controls(
+        self, row: int, start: float, end: float, db_ids: list[int]
+    ) -> None:
+        playback = QWidget()
+        playback_layout = QHBoxLayout(playback)
+        playback_layout.setContentsMargins(0, 0, 0, 0)
+        play_button = QPushButton("再生")
+        stop_button = QPushButton("停止")
+        play_button.clicked.connect(
+            lambda _checked=False, start=start, end=end: self.play_interval(start, end)
+        )
+        stop_button.clicked.connect(lambda _checked=False: self.stop_interval_audio())
+        playback_layout.addWidget(play_button)
+        playback_layout.addWidget(stop_button)
+        self.transcript_table.setCellWidget(row, 2, playback)
+        button = QPushButton("この区間を文字起こし")
+        button.clicked.connect(
+            lambda _checked=False, row=row, start=start, end=end, db_ids=db_ids:
+            self.transcribe_interval(row, start, end, db_ids)
+        )
+        self.transcript_table.setCellWidget(row, 3, button)
+
+    def play_interval(self, start: float, end: float) -> None:
+        try:
+            broadcaster_id, lv = self._identity()
+            audio_path = tracker.broadcast_target_dir(
+                lv, tracker.load_config(), broadcaster_id=broadcaster_id
+            ) / f"{lv}_audio.mp3"
+            if not audio_path.is_file():
+                raise FileNotFoundError(f"音声ファイルがありません: {audio_path}")
+            source = QUrl.fromLocalFile(str(audio_path.resolve()))
+            if self.interval_player.source() != source:
+                self.interval_player.setSource(source)
+            self.interval_play_end_ms = max(0, int(float(end) * 1000))
+            start_ms = max(0, int(float(start) * 1000))
+            QTimer.singleShot(100, lambda: self._start_interval_audio(start_ms))
+        except Exception as exc:
+            QMessageBox.critical(self, "区間再生", str(exc))
+
+    def _start_interval_audio(self, start_ms: int) -> None:
+        self.interval_player.setPosition(start_ms)
+        self.interval_player.play()
+
+    def stop_interval_audio(self) -> None:
+        self.interval_play_end_ms = 0
+        self.interval_player.stop()
+
+    def on_interval_audio_position(self, position_ms: int) -> None:
+        if self.interval_play_end_ms and position_ms >= self.interval_play_end_ms:
+            self.stop_interval_audio()
+
+    def transcribe_interval(
+        self, row: int, start: float, end: float, db_ids: list[int]
+    ) -> None:
+        if self.interval_job is not None:
+            self.status_view.append("別の区間を文字起こし中です")
+            return
+        try:
+            broadcaster_id, lv = self._identity()
+            self.status_view.append(
+                f"{lv}: {self.format_transcript_time(start)} - "
+                f"{self.format_transcript_time(end)} を文字起こし開始"
+            )
+            self.interval_job = IntervalTranscriptionJob(
+                broadcaster_id, lv, start, end, db_ids, row
+            )
+            self.interval_job.signals.progress.connect(self.status_view.append)
+            self.interval_job.signals.finished.connect(self.on_interval_transcribed)
+            QThreadPool.globalInstance().start(self.interval_job)
+        except Exception as exc:
+            QMessageBox.critical(self, "区間文字起こし", str(exc))
+
+    @pyqtSlot(object)
+    def on_interval_transcribed(self, result: dict[str, Any]) -> None:
+        self.interval_job = None
+        if not result.get("ok"):
+            self.status_view.append(f"区間文字起こし失敗: {result.get('error')}")
+            return
+        row = int(result["row"])
+        if row < self.transcript_table.rowCount():
+            text_item = self.transcript_table.item(row, 1)
+            if text_item is None:
+                text_item = QTableWidgetItem("")
+                self.transcript_table.setItem(row, 1, text_item)
+            text_item.setText(str(result.get("text") or ""))
+            time_item = self.transcript_table.item(row, 0)
+            if time_item is not None:
+                time_item.setData(Qt.ItemDataRole.UserRole, [int(result["db_id"])])
+        self.status_view.append("区間文字起こし完了。文字起こし欄へ反映しました")
 
     def save_and_apply(self) -> None:
         try:
@@ -8427,37 +9123,46 @@ class TimeshiftTagEditorTab(QWidget):
                     text_item = self.transcript_table.item(row, 1)
                     if not time_item or not text_item:
                         continue
-                    db_id = int(time_item.data(Qt.ItemDataRole.UserRole))
+                    db_id_values = time_item.data(Qt.ItemDataRole.UserRole) or []
+                    if not isinstance(db_id_values, list):
+                        db_id_values = [db_id_values]
+                    db_ids = [int(value) for value in db_id_values if value is not None]
+                    if not db_ids:
+                        continue
                     new_text = text_item.text().strip()
-                    old = conn.execute(
-                        "SELECT text, raw_json FROM archive_transcript_segments WHERE id = ? AND lv = ?",
-                        (db_id, lv),
-                    ).fetchone()
-                    if old and new_text != str(old["text"] or ""):
+                    placeholders = ",".join("?" for _ in db_ids)
+                    old_rows = conn.execute(
+                        f"SELECT id, text, raw_json FROM archive_transcript_segments "
+                        f"WHERE lv = ? AND id IN ({placeholders}) ORDER BY start_seconds, id",
+                        (lv, *db_ids),
+                    ).fetchall()
+                    old_text = "\n".join(str(item["text"] or "") for item in old_rows)
+                    if old_rows and new_text != old_text:
                         try:
-                            raw = json.loads(str(old["raw_json"] or "{}"))
+                            raw = json.loads(str(old_rows[0]["raw_json"] or "{}"))
                         except Exception:
                             raw = {}
                         raw["text"] = new_text
+                        primary_id = int(old_rows[0]["id"])
                         conn.execute(
                             "UPDATE archive_transcript_segments SET text = ?, raw_json = ? WHERE id = ? AND lv = ?",
-                            (new_text, json.dumps(raw, ensure_ascii=False), db_id, lv),
+                            (new_text, json.dumps(raw, ensure_ascii=False), primary_id, lv),
                         )
+                        if len(old_rows) > 1:
+                            extra_ids = [int(item["id"]) for item in old_rows[1:]]
+                            extra_placeholders = ",".join("?" for _ in extra_ids)
+                            conn.execute(
+                                f"DELETE FROM archive_transcript_segments WHERE lv = ? "
+                                f"AND id IN ({extra_placeholders})",
+                                (lv, *extra_ids),
+                            )
                         changed_segments.append((row, new_text))
                 conn.commit()
-            transcript_files = sorted((path.parent / lv).glob(f"{lv}_transcript.json"))
-            if transcript_files and changed_segments:
-                transcript_path = transcript_files[0]
-                transcript_payload = json.loads(transcript_path.read_text(encoding="utf-8-sig"))
-                transcripts = transcript_payload.get("transcripts", [])
-                for row, new_text in changed_segments:
-                    if row < len(transcripts) and isinstance(transcripts[row], dict):
-                        transcripts[row]["text"] = new_text
-                temp_transcript = transcript_path.with_suffix(".json.tmp")
-                temp_transcript.write_text(
-                    json.dumps(transcript_payload, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
-                temp_transcript.replace(transcript_path)
+            if changed_segments:
+                with tracker.connect() as conn:
+                    tracker.export_legacy_transcript_file_from_db(
+                        conn, lv, target_dir=path.parent / lv
+                    )
             self.status_view.append(
                 f"{lv}: 保存完了 / 削除タグ={exclusions or 'なし'} / 文字修正={len(changed_segments)}件"
             )

@@ -349,6 +349,7 @@ CREATE TABLE IF NOT EXISTS monitored_broadcasters (
     whisperx_model TEXT,
     whisperx_enabled INTEGER NOT NULL DEFAULT 0,
     transcription_initial_prompt TEXT NOT NULL DEFAULT '',
+    transcription_hotwords_enabled INTEGER NOT NULL DEFAULT 1,
     speaker_diarization_enabled INTEGER NOT NULL DEFAULT 0,
     diarization_min_speakers INTEGER NOT NULL DEFAULT 1,
     diarization_max_speakers INTEGER NOT NULL DEFAULT 4,
@@ -458,6 +459,7 @@ CREATE TABLE IF NOT EXISTS broadcast_archive_meta (
     fetched_at TEXT NOT NULL,
     html_path TEXT,
     comments_fetch_completed INTEGER NOT NULL DEFAULT 0,
+    comments_fetch_error TEXT,
     timeshift_video_download_completed INTEGER NOT NULL DEFAULT 0,
     timeshift_video_download_completed_at TEXT,
     timeshift_comments_download_completed INTEGER NOT NULL DEFAULT 0,
@@ -3085,9 +3087,39 @@ def reconcile_recording_jobs_with_processes(conn: sqlite3.Connection) -> list[di
             target_dir=str(row["target_dir"] or ""),
             payload={"reason": "recording_job_pid_not_running"},
         )
-        fixed.append({"lv": lv, "pid": pid, "status": "exited"})
+        fixed.append({**dict(row), "lv": lv, "pid": pid, "status": "exited", "ended_at": checked_at})
     if fixed:
         conn.commit()
+    # A GUI restart or a detached recorder can make us miss the normal
+    # QProcess-finished callback. PID reconciliation must therefore perform
+    # the same end check and queue Step 1 instead of merely writing "exited".
+    for row in fixed:
+        try:
+            finalize = finalize_recording_if_broadcast_ended(
+                lv=str(row.get("lv") or ""),
+                broadcaster_id=str(row.get("broadcaster_id") or ""),
+                broadcaster_name=str(row.get("broadcaster_name") or ""),
+                watch_url=str(row.get("watch_url") or ""),
+                recorder=str(row.get("recorder") or "SlNicoLiveRec"),
+                previous_pid=int(row.get("pid") or 0),
+                exit_code=None,
+                ended_at=str(row.get("ended_at") or checked_at),
+                target_dir=str(row.get("target_dir") or ""),
+                source_event="recording_pid_reconciled_missing",
+            )
+            row["finalize"] = finalize
+        except Exception as exc:
+            row["finalize"] = {
+                "finalized": False,
+                "reason": "reconcile_finalize_error",
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+            postprocess_log(
+                str(row.get("lv") or ""),
+                "dispatcher",
+                "ERROR",
+                f"PID消失後のStep開始判定に失敗: {type(exc).__name__}: {exc}",
+            )
     return fixed
 
 
@@ -3308,7 +3340,25 @@ def start_recording_for_broadcast(
                     "UPDATE recording_jobs SET status = ?, updated_at = ? WHERE lv = ?",
                     ("exited", current_time, lv),
                 )
-                return {"started": False, "reason": "process_exit_pending", "pid": pid}
+                conn.commit()
+                finalize = finalize_recording_if_broadcast_ended(
+                    lv=lv,
+                    broadcaster_id=broadcaster_id,
+                    broadcaster_name=broadcaster_name,
+                    watch_url=watch_url,
+                    recorder=recorder,
+                    previous_pid=pid,
+                    exit_code=None,
+                    ended_at=now_micro(),
+                    target_dir=str(target_dir),
+                    source_event="auto_recording_dead_pid",
+                )
+                return {
+                    "started": False,
+                    "reason": "process_exit_finalized" if finalize.get("finalize_queued") else "process_exit_pending",
+                    "pid": pid,
+                    "finalize": finalize,
+                }
         if not force_restart:
             conn.execute(
                 "UPDATE recording_jobs SET status = ?, updated_at = ? WHERE lv = ?",
@@ -4186,7 +4236,7 @@ def slnico_storage_root(config: Config | None = None) -> Path:
             config_path = configured_path
     default_root = config_path.parent / "rec_file"
     try:
-        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw = json.loads(config_path.read_text(encoding="utf-8-sig"))
         location = str(raw.get("StorageLocation") or "rec_file\\")
         path = Path(location)
         if not path.is_absolute():
@@ -4403,7 +4453,7 @@ def _download_timeshift_video_with_recorder_locked(
     recorder_config_path = exe.parent / "SlNicoLiveRec_config.json"
     if recorder_config_path.is_file():
         try:
-            recorder_config = json.loads(recorder_config_path.read_text(encoding="utf-8"))
+            recorder_config = json.loads(recorder_config_path.read_text(encoding="utf-8-sig"))
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             raise RuntimeError(f"SlNicoLiveRec config read failed: {recorder_config_path}: {exc}") from exc
         if not bool(recorder_config.get("CloseWindowOnExit", False)):
@@ -7399,6 +7449,19 @@ def apply_monitored_broadcaster_feature_overrides(lv: str, legacy_config: dict[s
     tag_entries = parse_archive_tag_entries(row["archive_tags"])
     legacy_config["tags"] = tag_entries["tags"]
     legacy_config["tag_aliases"] = tag_entries["aliases"]
+    # Saved broadcaster prompts are basic per-account context and must apply
+    # even when the optional custom feature/engine overrides are disabled.
+    ai_prompts = legacy_config.setdefault("ai_prompts", {})
+    for key in (
+        "summary_prompt",
+        "image_prompt",
+        "music_prompt",
+        "intro_conversation_prompt",
+        "outro_conversation_prompt",
+    ):
+        text = str(row[key] or "").strip()
+        if text:
+            ai_prompts[key] = text
     if not int(row["custom_settings_enabled"] or 0):
         return legacy_config
 
@@ -7428,17 +7491,6 @@ def apply_monitored_broadcaster_feature_overrides(lv: str, legacy_config: dict[s
             or legacy_config.get("ai_task_engines", {}).get("special_user_summary", "codex_exec")
         ),
     }
-    ai_prompts = legacy_config.setdefault("ai_prompts", {})
-    for key in (
-        "summary_prompt",
-        "image_prompt",
-        "music_prompt",
-        "intro_conversation_prompt",
-        "outro_conversation_prompt",
-    ):
-        text = str(row[key] or "").strip()
-        if text:
-            ai_prompts[key] = text
     return legacy_config
 
 
@@ -7523,7 +7575,18 @@ def resolve_monitored_broadcaster_transcription_settings(
         if row is not None and "transcription_initial_prompt" in row.keys()
         else ""
     ) or default_prompt
-    hotwords = ", ".join(parse_archive_tag_entries(row["archive_tags"])["hotwords"]) if row is not None else ""
+    # This switch only controls speech-recognition hints. Tag aliases and
+    # index_person_aliases.json remain active independently.
+    hotwords_enabled = (
+        bool(row["transcription_hotwords_enabled"])
+        if row is not None and "transcription_hotwords_enabled" in row.keys()
+        else True
+    )
+    hotwords = (
+        " ".join(parse_archive_tag_entries(row["archive_tags"])["hotwords"])
+        if row is not None and hotwords_enabled
+        else ""
+    )
     if row is None or not int(row["custom_settings_enabled"] or 0):
         return {
             "source": "default",
@@ -7537,6 +7600,7 @@ def resolve_monitored_broadcaster_transcription_settings(
             "diarization_min_speakers": 1,
             "diarization_max_speakers": 4,
             "initial_prompt": initial_prompt,
+            "hotwords_enabled": hotwords_enabled,
             "hotwords": hotwords,
         }
     whisper_model = str(row["faster_whisper_model"] or fallback_model or "large-v3")
@@ -7556,6 +7620,7 @@ def resolve_monitored_broadcaster_transcription_settings(
         "diarization_min_speakers": int(row["diarization_min_speakers"] or 1),
         "diarization_max_speakers": int(row["diarization_max_speakers"] or 4),
         "initial_prompt": initial_prompt,
+        "hotwords_enabled": hotwords_enabled,
         "hotwords": hotwords,
     }
 
@@ -7605,6 +7670,16 @@ def build_legacy_pipeline_data(
                 "parts": [],
                 "total_duration_seconds": 0.0,
             }
+    with connect() as conn:
+        comment_state = conn.execute(
+            "SELECT comments_fetch_error FROM broadcast_archive_meta WHERE lv = ?",
+            (str(lv).strip(),),
+        ).fetchone()
+    comments_fetch_error = (
+        str(comment_state["comments_fetch_error"] or "").strip()
+        if comment_state is not None and "comments_fetch_error" in comment_state.keys()
+        else ""
+    )
     return {
         "platform": "niconico",
         "account_id": account_id,
@@ -7615,6 +7690,8 @@ def build_legacy_pipeline_data(
         "config": legacy_config,
         "start_time": datetime.now(),
         "recording_segment_timeline": recording_segment_timeline,
+        "comments_fetch_failed": bool(comments_fetch_error),
+        "comments_fetch_error": comments_fetch_error,
         "results": {},
     }
 
@@ -10116,6 +10193,7 @@ def save_monitored_broadcaster_details(broadcaster_id: str, values: dict[str, An
         "whisperx_model",
         "whisperx_enabled",
         "transcription_initial_prompt",
+        "transcription_hotwords_enabled",
         "speaker_diarization_enabled",
         "diarization_min_speakers",
         "diarization_max_speakers",
@@ -10730,6 +10808,10 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             "ALTER TABLE broadcast_archive_meta "
             "ADD COLUMN comments_fetch_completed INTEGER NOT NULL DEFAULT 0"
         )
+    if "comments_fetch_error" not in broadcast_archive_meta_columns:
+        conn.execute(
+            "ALTER TABLE broadcast_archive_meta ADD COLUMN comments_fetch_error TEXT"
+        )
     if "timeshift_download_completed" not in broadcast_archive_meta_columns:
         conn.execute(
             "ALTER TABLE broadcast_archive_meta "
@@ -10905,6 +10987,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         "whisperx_model": "TEXT",
         "whisperx_enabled": "INTEGER NOT NULL DEFAULT 0",
         "transcription_initial_prompt": "TEXT NOT NULL DEFAULT ''",
+        "transcription_hotwords_enabled": "INTEGER NOT NULL DEFAULT 1",
         "speaker_diarization_enabled": "INTEGER NOT NULL DEFAULT 0",
         "diarization_min_speakers": "INTEGER NOT NULL DEFAULT 1",
         "diarization_max_speakers": "INTEGER NOT NULL DEFAULT 4",
@@ -12121,7 +12204,7 @@ def load_registered_slnico_user_session(config: Config | None = None) -> str:
     if not config_path.is_file():
         raise FileNotFoundError(f"SlNicoLiveRec config not found: {config_path}")
     try:
-        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw = json.loads(config_path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"SlNicoLiveRec config read failed: {config_path}: {exc}") from exc
     encrypted = str(raw.get("UserSession") or "").strip()
@@ -12426,6 +12509,17 @@ def mark_archive_comments_fetch_completed(conn: sqlite3.Connection, lv: str) -> 
     )
 
 
+def set_archive_comments_fetch_error(conn: sqlite3.Connection, lv: str, error: str) -> None:
+    conn.execute(
+        """
+        INSERT INTO broadcast_archive_meta (lv, fetched_at, comments_fetch_error)
+        VALUES (?, ?, ?)
+        ON CONFLICT(lv) DO UPDATE SET comments_fetch_error = excluded.comments_fetch_error
+        """,
+        (lv, now_micro(), str(error or "").strip() or None),
+    )
+
+
 def mark_timeshift_download_completed(lv: str) -> None:
     """動画とコメントの双方が取得済みになった時点を記録する。"""
     completed_at = now_micro()
@@ -12507,6 +12601,9 @@ def download_and_store_archive_comments(
             inventory["fetch_completed"] = True
 
     if inventory["reusable"]:
+        with connect() as conn:
+            set_archive_comments_fetch_error(conn, lv, "")
+            conn.commit()
         result = {
             "lv": lv,
             "fetched_count": 0,
@@ -12538,8 +12635,43 @@ def download_and_store_archive_comments(
         return result
 
     config = config or load_config()
-    temp_path = download_timeshift_comments(lv, config)
-    comments = parse_comments(temp_path)
+    try:
+        temp_path = download_timeshift_comments(lv, config)
+        comments = parse_comments(temp_path)
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+        with connect() as conn:
+            set_archive_comments_fetch_error(conn, lv, error)
+            conn.commit()
+        result = {
+            "lv": lv,
+            "fetched_count": 0,
+            "inserted_count": 0,
+            "duplicate_count": 0,
+            "stored_count": inventory["stored_count"],
+            "expected_count": inventory["expected_count"],
+            "expected_count_source": inventory["expected_count_source"],
+            "comments_fetch_completed": inventory["fetch_completed"],
+            "reused": True,
+            "reason": "timeshift_api_failed_fallback",
+            "source": "database_fallback",
+            "acquisition_error": error,
+            "db_path": str(DB_PATH),
+            "table": "archive_comments",
+            "temp_path": "",
+            "temp_deleted": True,
+        }
+        postprocess_log(
+            lv,
+            "timeshift_comments",
+            "WARN",
+            (
+                "タイムシフトコメント取得失敗のため保存済みコメントで続行: "
+                f"stored={result['stored_count']} expected={result['expected_count']} error={error}"
+            ),
+            result,
+        )
+        return result
     inserted_count = 0
     with connect() as conn:
         for comment in comments:
@@ -12553,6 +12685,7 @@ def download_and_store_archive_comments(
             ).fetchone()[0]
         )
         mark_archive_comments_fetch_completed(conn, lv)
+        set_archive_comments_fetch_error(conn, lv, "")
         conn.commit()
     shutil.rmtree(temp_path.parent, ignore_errors=True)
     result = {
@@ -12770,15 +12903,17 @@ def check_lv_for_special_users(conn: sqlite3.Connection, row: sqlite3.Row, confi
 
         shutil.rmtree(temp_path.parent, ignore_errors=True)
         record_check(conn, lv, "no_special_user_deleted", comments, [], None, deleted_temp=True)
-        discard_broadcast_without_match(conn, lv, row["first_seen_at"])
+        # A negative special-user scan only marks this scan as completed.
+        # The broadcast row is shared with recording/end detection, so deleting
+        # it here can orphan a valid recording before finalization is queued.
         postprocess_log(
             lv,
             "ndgr_check",
             "TRACE",
-            f"NDGRチェック終了: no_special_user_deleted elapsed={time.monotonic() - started:.1f}s comments={len(comments)}",
-            {"result": "no_special_user_deleted", "comments": len(comments), "elapsed_seconds": time.monotonic() - started},
+            f"NDGRチェック終了: no_special_user_checked elapsed={time.monotonic() - started:.1f}s comments={len(comments)}",
+            {"result": "no_special_user_checked", "comments": len(comments), "elapsed_seconds": time.monotonic() - started},
         )
-        return {"lv": lv, "result": "no_special_user_deleted", "matches": 0, "linked": 0}
+        return {"lv": lv, "result": "no_special_user_checked", "matches": 0, "linked": 0}
     except Exception as exc:
         error = str(exc)
         if is_ndgr_ended_failure(error):

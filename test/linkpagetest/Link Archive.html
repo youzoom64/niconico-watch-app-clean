@@ -1,0 +1,712 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<title>リンク一覧 — Archive</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Reggae+One&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  *,*::before,*::after{ box-sizing:border-box }
+  :root{
+    --bg: #111015;
+    --paper: #1b171f;
+    --ink: #ffeaf2;
+    --ink-soft: #f2c8d9;
+    --mute: #b98fa2;
+    --line: #3a2b35;
+    --accent: #ff9ec2;
+    --accent-soft: #3a2230;
+    --tag-bg: #2a2028;
+    --tag-bg-active: #ffd6e7;
+    --tag-text-active: #111111;
+  }
+
+  html,body{ margin:0; padding:0; background: var(--bg); color: var(--ink); }
+  body{
+    font-family: "Noto Sans JP", system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .wrap{ max-width: 920px; margin: 0 auto; padding: 56px 32px 80px; }
+  @media (max-width: 700px){ .wrap{ padding: 28px 18px 60px } }
+
+  /* ─── Header ─── */
+  header.top{ margin-bottom: 36px }
+  .h-row{
+    display:flex; align-items: baseline; gap: 14px;
+    border-bottom: 1px solid var(--ink);
+    padding-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  h1{
+    font-family: "Reggae One", system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 30px;
+    letter-spacing: .04em;
+    margin: 0;
+  }
+  .h-en{
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    letter-spacing: .22em;
+    color: var(--mute);
+    text-transform: uppercase;
+    margin-left: auto;
+  }
+  .meta-line{
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--mute);
+    font-family: "JetBrains Mono", monospace;
+    letter-spacing: .04em;
+    display:flex; gap:18px; flex-wrap: wrap;
+  }
+  .meta-line b{ color: var(--ink); font-weight: 500 }
+
+  /* ─── Search ─── */
+  .search{
+    margin-top: 28px;
+    display:flex; align-items:center; gap: 10px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    border-radius: 2px;
+    padding: 10px 14px;
+    transition: border-color .2s ease, box-shadow .2s ease;
+  }
+  .search:focus-within{
+    border-color: var(--ink);
+    box-shadow: 0 0 0 3px rgba(255,116,92,.14);
+  }
+  .search svg{ flex-shrink:0; color: var(--mute) }
+  .search input{
+    appearance:none; border:0; background:transparent; outline:none;
+    flex: 1; min-width: 0;
+    font: inherit;
+    color: var(--ink);
+    font-size: 14px;
+  }
+  .search .clear{
+    appearance:none; border:0; background:transparent;
+    color: var(--mute); cursor:default;
+    padding: 2px 6px; border-radius: 999px;
+    font-size: 12px;
+  }
+  .search .clear:hover{ color: var(--ink); background: var(--bg) }
+
+  /* ─── Tag cloud ─── */
+  .tags-wrap{ margin-top: 18px }
+  .tags-label{
+    font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--mute); font-family: "JetBrains Mono", monospace;
+    margin-bottom: 8px;
+  }
+  .tags{
+    display:flex; flex-wrap:wrap; gap: 6px;
+  }
+  .tag{
+    appearance:none; border:0;
+    font: inherit;
+    font-size: 12px;
+    color: var(--ink-soft);
+    background: var(--tag-bg);
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: default;
+    transition: background .15s ease, color .15s ease, transform .15s ease;
+    display:inline-flex; align-items:center; gap: 6px;
+    white-space: nowrap;
+  }
+  .tag:hover{ background: #3a2a36 }
+  .tag.active{
+    background: var(--tag-bg-active);
+    color: var(--tag-text-active);
+  }
+  .tag .count{
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10.5px;
+    color: var(--mute);
+    font-variant-numeric: tabular-nums;
+  }
+  .tag.active .count{ color: rgba(250,247,240,.6) }
+
+  /* ─── Year + post list ─── */
+  .year-section{ margin-top: 40px }
+  .year-head{
+    display:flex; align-items: baseline; gap: 14px;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .year-head h2{
+    font-family: "Reggae One", system-ui, sans-serif;
+    font-size: 22px; font-weight: 500;
+    margin: 0;
+    letter-spacing: .04em;
+  }
+  .year-head .y-count{
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    color: var(--mute);
+  }
+
+  .post{
+    position: relative;
+    display: grid;
+    grid-template-columns: 78px 1fr;
+    gap: 16px;
+    padding: 14px 0;
+    border-bottom: 1px dashed var(--line);
+    transition: background .15s ease;
+  }
+  .post:hover{ background: rgba(255,255,255,.035) }
+  .post:hover{ z-index: 5 }
+  @media (max-width: 600px){
+    .post{ grid-template-columns: 60px 1fr; gap: 10px }
+  }
+
+  .p-date{
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    color: var(--mute);
+    line-height: 1.4;
+    padding-top: 2px;
+  }
+  .p-date .md{ color: var(--ink); font-weight: 500; font-size: 13px }
+  .p-date .hm{ display:block; color: var(--mute); font-size: 11px; margin-top:1px }
+
+  .p-body{ display:flex; flex-direction: column; gap: 6px; min-width:0 }
+  .p-title{
+    margin: 0;
+    font-size: 15px; font-weight: 500;
+    line-height: 1.5;
+    color: var(--ink);
+    text-wrap: pretty;
+    position: relative;
+    overflow: hidden;
+  }
+  .p-title a{
+    color: inherit; text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: border-color .15s ease, color .15s ease;
+    display: inline-flex;
+    max-width: 100%;
+    white-space: nowrap;
+  }
+  .p-title::before{
+    content:"";
+    position:absolute;
+    inset:0 auto 0 0;
+    width: 42px;
+    pointer-events:none;
+    opacity:0;
+    z-index:2;
+    background: linear-gradient(90deg, var(--bg), rgba(17,16,21,0));
+    transition: opacity .18s ease;
+  }
+  .post:hover .p-title::before{ opacity:1 }
+  .post:hover .p-title a{
+    animation: title-marquee 7s linear infinite;
+    border-bottom-color: currentColor;
+  }
+  @keyframes title-marquee{
+    0%, 12%{ transform: translateX(0) }
+    82%, 100%{ transform: translateX(calc(-100% + min(100%, 560px))) }
+  }
+  .p-title a:hover{ color: var(--accent); border-bottom-color: currentColor }
+  .p-title .arrow{
+    display: inline-block;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px;
+    color: var(--mute);
+    margin-left: 4px;
+    transition: transform .15s ease, color .15s ease;
+  }
+  .p-title a:hover .arrow{ color: var(--accent); transform: translateX(2px) }
+  .p-tags{ display:flex; flex-wrap: wrap; gap: 4px }
+  .p-tag{
+    font-size: 10.5px;
+    color: var(--mute);
+    background: var(--tag-bg);
+    padding: 2px 7px;
+    border-radius: 999px;
+    cursor: default;
+    transition: background .15s ease, color .15s ease;
+  }
+  .p-tag:hover{ background: var(--ink); color: var(--paper) }
+  .p-tag.highlight{
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .summary-pop{
+    position:absolute;
+    left: 94px;
+    top: calc(100% - 4px);
+    width: min(520px, calc(100vw - 140px));
+    display:grid;
+    grid-template-columns: 112px 1fr;
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(27,23,31,.97);
+    box-shadow: 0 18px 50px rgba(0,0,0,.42);
+    color: var(--ink);
+    opacity:0;
+    pointer-events:none;
+    transform: translateY(8px);
+    transition: opacity .16s ease, transform .16s ease;
+  }
+  .post:hover .summary-pop{
+    opacity:1;
+    transform: translateY(0);
+  }
+  .summary-image{
+    width:112px;
+    aspect-ratio: 16 / 10;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background:
+      radial-gradient(circle at 25% 30%, rgba(255,158,194,.34), transparent 34%),
+      linear-gradient(135deg, #271a24, #141219 70%);
+    display:grid;
+    place-items:center;
+    color: var(--mute);
+    font-size: 11px;
+    overflow:hidden;
+  }
+  .summary-image img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  .summary-text{
+    min-width:0;
+    font-size: 12.5px;
+    line-height:1.75;
+    color: var(--ink-soft);
+  }
+  .summary-text b{
+    display:block;
+    margin-bottom: 4px;
+    color: var(--ink);
+    font-size: 12px;
+    letter-spacing:.08em;
+  }
+  @media (max-width: 700px){
+    .summary-pop{
+      left: 0;
+      width: min(100%, calc(100vw - 36px));
+      grid-template-columns: 1fr;
+    }
+    .summary-image{ width:100% }
+  }
+
+  /* ─── Highlights for search match ─── */
+  mark{
+    background: var(--accent-soft);
+    color: var(--accent);
+    padding: 0 2px;
+    border-radius: 2px;
+  }
+
+  /* ─── Empty ─── */
+  .empty{
+    text-align:center;
+    padding: 60px 20px;
+    color: var(--mute);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 13px;
+  }
+
+  /* ─── Back-to-top ─── */
+  .top-btn{
+    position: fixed;
+    right: 24px; bottom: 24px;
+    appearance:none; border: 1px solid var(--line);
+    background: var(--paper);
+    color: var(--ink);
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    cursor: default;
+    font-size: 16px;
+    display: grid; place-items: center;
+    box-shadow: 0 4px 18px rgba(0,0,0,.35);
+    opacity: 0; pointer-events: none;
+    transition: opacity .25s ease, transform .25s ease;
+    transform: translateY(8px);
+  }
+  .top-btn.show{ opacity: 1; pointer-events: auto; transform: none }
+  .top-btn:hover{ background: var(--ink); color: var(--paper); border-color: var(--ink) }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="h-row">
+      <h1>リンク一覧</h1>
+      <span class="h-en">LINK ARCHIVE</span>
+    </div>
+    <div class="meta-line">
+      <span>全 <b id="totalCount">—</b> 件</span>
+      <span>表示 <b id="shownCount">—</b> 件</span>
+      <span id="dateRange">—</span>
+    </div>
+
+    <div class="search">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="search" id="search" placeholder="タイトル・タグで検索…" autocomplete="off" />
+      <button class="clear" id="clearBtn" hidden>✕ クリア</button>
+    </div>
+
+    <div class="tags-wrap">
+      <div class="tags-label">TAGS — クリックで絞り込み</div>
+      <div class="tags" id="tagCloud"></div>
+    </div>
+  </header>
+
+  <main id="list"></main>
+</div>
+
+<button class="top-btn" id="topBtn" aria-label="ページ上部へ">↑</button>
+
+<script type="application/json" id="raw-data">
+更新しました！チンカスアニメ豚太郎のコメント追跡！|2025-09-28 10:01:22|https://saveniconicocomment.com/comment/gaored_index.html|
+愛国無罪！蛤御門ニュース|2023-08-14 21:52:37|http://saveniconicocomment.com/post/updated_20231207063038.html|ロシア,アニメ,チンカスアニメ豚太郎,ペディオン,コラボ,暇空,ようずん
+愛国無罪！蛤御門ニュース|2023-08-22 22:24:52|http://saveniconicocomment.com/post/updated_20231207065528.html|ネトウヨ,アニメ,チンカスアニメ豚太郎,Pちゃん,ペディオン,コラボ,暇空,ようずん
+愛国無罪！蛤御門ニュース|2023-08-22 22:54:59|http://saveniconicocomment.com/post/updated_20231207071048.html|アニメ,チンカスアニメ豚太郎,キンマン,コラボ,暇空,ようずん
+愛国無罪！蛤御門ニュース|2023-08-22 23:25:16|http://saveniconicocomment.com/post/updated_20231207073118.html|ウクライナ,ロシア,アニメ,チンカスアニメ豚太郎,コラボ,ようずん
+愛国無罪！蛤御門ニュース|2023-08-23 21:40:45|http://saveniconicocomment.com/post/updated_20231207080120.html|ウクライナ,ロシア,アニメ,チンカスアニメ豚太郎,暇空,ようずん
+愛国無罪！蛤御門ニュース|2023-08-23 22:09:23|http://saveniconicocomment.com/post/updated_20231207110807.html|ネトウヨ,ウクライナ,ロシア,アニメ,チンカスアニメ豚太郎,バ会長,靖国,沢村,こうし,コラボ,暇空,ようずん
+愛国無罪！蛤御門ニュース|2023-08-23 22:38:46|http://saveniconicocomment.com/post/updated_20231207112645.html|ネトウヨ,ウクライナ,ロシア,アニメ,チンカスアニメ豚太郎,バ会長,靖国,暇空,ようずん
+愛国無罪！蛤御門ニュース|2023-08-24 21:50:10|http://saveniconicocomment.com/post/updated_20231207115201.html|ネトウヨ,ウクライナ,ロシア,アニメ,チンカスアニメ豚太郎,ハイゼン,コラボ,ようずん
+愛国無罪！蛤御門ニュース|2023-08-24 22:19:04|http://saveniconicocomment.com/post/updated_20231207125224.html|アニメ,ウルトラマン,チンカスアニメ豚太郎,がる爺,銃弾,ペディオン,コニャック,キンマン,バ会長,あたる,溝口,沢村,ハイロック,岡目,コラボ,暇空,ようずん
+愛国無罪！蛤御門ニュース|2023-08-24 22:45:16|http://saveniconicocomment.com/post/updated_20231207130945.html|ネトウヨ,ロシア,アニメ,チンカスアニメ豚太郎,がる爺,溝口,コラボ,ようずん
+愛国無罪！蛤御門ニュース|2023-08-25 20:19:23|http://saveniconicocomment.com/post/updated_20231207133140.html|ウクライナ,ロシア,アニメ,チンカスアニメ豚太郎,コラボ,暇空,ようずん
+愛国無罪！蛤御門ニュース|2023-09-04 22:18:36|http://saveniconicocomment.com/post/updated_20231207134602.html|アニメ,チンカスアニメ豚太郎,Pちゃん,コラボ,暇空
+ようずんの盗⚪︎事件から2年経ちました。今だから話します。|2023-09-11 21:26:05|http://saveniconicocomment.com/post/updated_20231207135205.html|アニメ,チンカスアニメ豚太郎,銃弾,ペディオン,バ会長,靖国,溝口,沢村,暇空,ようずん
+ようずんの盗⚪︎事件から2年経ちました。今だから話します。|2023-09-11 21:55:11|http://saveniconicocomment.com/post/updated_20231207135728.html|アニメ,特撮,チンカスアニメ豚太郎,東条,夏川,ようずん
+ようずんの盗⚪︎事件から2年経ちました。今だから話します。|2023-09-11 22:13:22|http://saveniconicocomment.com/post/updated_20231207140431.html|アニメ,大阪沼狸,チンカスアニメ豚太郎,暇空,ようずん
+ようずんの盗⚪︎事件から2年経ちました。今だから話します。|2023-09-11 22:44:07|http://saveniconicocomment.com/post/updated_20231207140856.html|ネトウヨ,チンカスアニメ豚太郎,キンマン,沢村,ハイロック,コラボ,暇空,ようずん
+ようずんの盗⚪︎事件から2年経ちました。今だから話します。|2023-09-11 23:12:39|http://saveniconicocomment.com/post/updated_20231207141956.html|チンカスアニメ豚太郎,コラボ,暇空,ようずん
+雑談|2023-09-13 23:26:32|http://saveniconicocomment.com/post/updated_20231207142801.html|ペディオン,コラボ,暇空,ようずん
+雑談|2023-09-13 23:56:40|http://saveniconicocomment.com/post/updated_20231207143306.html|ネトウヨ,キンマン,靖国,コラボ,暇空,ようずん
+雑談|2023-09-14 00:26:37|http://saveniconicocomment.com/post/updated_20231207143658.html|ネトウヨ,靖国,コラボ,暇空,ようずん
+雑談|2023-09-14 22:42:38|http://saveniconicocomment.com/post/updated_20231207144033.html|チンカスアニメ豚太郎,ペディオン,ようずん
+雑談|2023-09-15 22:45:27|http://saveniconicocomment.com/post/updated_20231207144535.html|ウルトラマン,チンカスアニメ豚太郎,ペディオン,キンマン,ハイロック,コラボ,暇空,ようずん
+雑談|2023-09-18 22:17:27|http://saveniconicocomment.com/post/updated_20231207145920.html|ウクライナ,チンカスアニメ豚太郎,銃弾,コラボ,ようずん
+雑談|2023-09-19 20:51:43|http://saveniconicocomment.com/post/updated_20231207150338.html|ウクライナ,チンカスアニメ豚太郎,銃弾,スレッシュ,バ会長,溝口,沢村,ハイロック,ハイゼン,ようずん
+雑談|2023-09-19 21:20:45|http://saveniconicocomment.com/post/updated_20231207150723.html|ウルトラマン,チンカスアニメ豚太郎,銃弾,スレッシュ,ようずん
+雑談|2023-09-20 21:37:05|http://saveniconicocomment.com/post/updated_20231207150906.html|
+雑談|2023-09-21 21:55:48|http://saveniconicocomment.com/post/updated_20231207151706.html|ウルトラマン,チンカスアニメ豚太郎,銃弾,ペディオン,コニャック,沢村,ようずん
+愛国無罪！蛤御門ニュース|2023-09-22 22:15:07|http://saveniconicocomment.com/post/updated_20231207151941.html|
+愛国無罪！蛤御門ニュース|2023-09-22 22:54:27|http://saveniconicocomment.com/post/updated_20231207152409.html|チンカスアニメ豚太郎,コラボ,暇空,ようずん
+はい雑談|2023-09-24 21:09:14|http://saveniconicocomment.com/post/updated_20231207160449.html|チンカスアニメ豚太郎,ようずん
+はい雑談|2023-09-24 21:16:29|http://saveniconicocomment.com/post/updated_20231207161919.html|ロシア,チンカスアニメ豚太郎,スレッシュ,ペディオン,コニャック,溝口,沢村,ようずん
+はい雑談|2023-09-28 01:51:34|http://saveniconicocomment.com/post/updated_20231207163348.html|ネトウヨ,こうし
+はい雑談|2023-09-28 21:49:03|http://saveniconicocomment.com/post/updated_20231207164032.html|ロシア,ウルトラマン,特撮,チンカスアニメ豚太郎,沢村,コラボ,ようずん
+はい雑談|2023-09-28 22:18:00|http://saveniconicocomment.com/post/updated_20231207164442.html|ネトウヨ,ウクライナ,ロシア,チンカスアニメ豚太郎,キンマン,靖国,ようずん
+はい雑談|2023-09-28 22:46:08|http://saveniconicocomment.com/post/updated_20231207164935.html|チンカスアニメ豚太郎,ペディオン,キンマン,あたる,ハイロック,こうし,コラボ,ようずん
+はい雑談|2023-09-29 20:24:39|http://saveniconicocomment.com/post/updated_20231207165519.html|
+はい雑談|2023-09-29 21:00:27|http://saveniconicocomment.com/post/updated_20231207170832.html|ネトウヨ,チンカスアニメ豚太郎,コラボ,暇空
+はい雑談|2023-09-29 21:29:26|http://saveniconicocomment.com/post/updated_20231207171722.html|ロシア,チンカスアニメ豚太郎,コラボ,暇空
+はい雑談|2023-09-29 21:58:22|http://saveniconicocomment.com/post/updated_20231207172216.html|チンカスアニメ豚太郎,東条,コラボ,暇空,ようずん
+はい雑談|2023-09-29 22:26:27|http://saveniconicocomment.com/post/updated_20231207172654.html|ペディオン,沢村,ようずん
+はい雑談|2023-09-30 21:02:22|http://saveniconicocomment.com/post/updated_20231207173103.html|チンカスアニメ豚太郎,暇空,ようずん
+はい雑談|2023-09-30 21:31:19|http://saveniconicocomment.com/post/updated_20231207173958.html|ロシア,ウルトラマン,特撮,チンカスアニメ豚太郎,ネオ東条,東条,沢村,こうし,コラボ,暇空,ようずん
+はい雑談|2023-09-30 22:01:51|http://saveniconicocomment.com/post/updated_20231207174425.html|ウルトラマン,チンカスアニメ豚太郎,城南,溝口,トキノミノル,暇空,ようずん
+はい雑談|2023-09-30 22:32:17|http://saveniconicocomment.com/post/updated_20231207175244.html|特撮,チンカスアニメ豚太郎,東条,ペディオン,キンマン,靖国,夏川,沢村,トキノミノル,こうし,ようずん
+はい雑談|2023-09-30 23:02:44|http://saveniconicocomment.com/post/updated_20231207175954.html|チンカスアニメ豚太郎,がる爺,銃弾,ペディオン,ようずん
+はい雑談|2023-09-30 23:33:05|http://saveniconicocomment.com/post/updated_20231207180437.html|ウルトラマン,チンカスアニメ豚太郎,東条,夏川,沢村,こうし,暇空,ようずん
+はい雑談|2023-10-01 00:02:56|http://saveniconicocomment.com/post/updated_20231207181251.html|ウクライナ,ロシア,ウルトラマン,特撮,チンカスアニメ豚太郎,がる爺,東条,コニャック,バ会長,コラボ,暇空,ようずん
+はい雑談|2023-10-01 20:29:39|http://saveniconicocomment.com/post/updated_20231207212143.html|ウルトラマン,特撮,チンカスアニメ豚太郎,コラボ,ようずん
+はい雑談|2023-10-01 21:02:48|http://saveniconicocomment.com/post/updated_20231207212605.html|ウクライナ,ロシア,ウルトラマン,チンカスアニメ豚太郎,コニャック,あたる,こうし,ようずん
+はい雑談|2023-10-01 21:33:08|http://saveniconicocomment.com/post/updated_20231207213028.html|ウクライナ,ロシア,特撮,チンカスアニメ豚太郎,ようずん
+はい雑談|2023-10-01 22:02:48|http://saveniconicocomment.com/post/updated_20231207213509.html|ウルトラマン,特撮,戦隊,チンカスアニメ豚太郎,東条,ようずん
+はい雑談|2023-10-01 22:31:24|http://saveniconicocomment.com/post/updated_20231207214116.html|ネトウヨ,ウルトラマン,特撮,戦隊,チンカスアニメ豚太郎,キンマン
+はい雑談|2023-10-01 23:01:47|http://saveniconicocomment.com/post/updated_20231207214553.html|ネトウヨ,ロシア,ウルトラマン,特撮,戦隊,チンカスアニメ豚太郎,みかん,あたる,暇空,ようずん
+はい雑談|2023-10-02 21:51:08|http://saveniconicocomment.com/post/updated_20231207215012.html|ウルトラマン,チンカスアニメ豚太郎,コラボ,暇空
+はい雑談|2023-10-02 22:21:35|http://saveniconicocomment.com/post/updated_20231207215524.html|ネトウヨ,チンカスアニメ豚太郎,コラボ,暇空
+はい雑談|2023-10-02 22:51:46|http://saveniconicocomment.com/post/updated_20231207220046.html|チンカスアニメ豚太郎,東条,ペディオン,あたる,コラボ,暇空,ようずん
+はい雑談|2023-10-02 23:22:14|http://saveniconicocomment.com/post/updated_20231207220523.html|特撮,チンカスアニメ豚太郎,ネオ東条,東条,暇空,ようずん
+はい雑談|2023-10-02 23:52:15|http://saveniconicocomment.com/post/updated_20231207220936.html|コラボ,暇空,ようずん
+はい雑談|2023-10-03 00:22:37|http://saveniconicocomment.com/post/updated_20231207221248.html|ウルトラマン,コラボ
+はい雑談|2023-10-03 00:40:19|http://saveniconicocomment.com/post/updated_20231207221955.html|コラボ,暇空,ようずん
+はい雑談|2023-10-03 01:09:44|http://saveniconicocomment.com/post/updated_20231207222415.html|ネトウヨ,ロシア,コラボ,暇空,ようずん
+はい雑談|2023-10-03 01:40:08|http://saveniconicocomment.com/post/updated_20231207222853.html|多様性,ネトウヨ,ウクライナ,ナザレンコ,ロシア
+はい雑談|2023-10-03 02:10:25|http://saveniconicocomment.com/post/updated_20231207223330.html|ネトウヨ,ウクライナ,アンドリー,ナザレンコ,ロシア,コラボ
+はい雑談|2023-10-03 02:40:40|http://saveniconicocomment.com/post/updated_20231207223736.html|ロシア,ウルトラマン,特撮,戦隊
+はい雑談|2023-10-03 21:08:32|http://saveniconicocomment.com/post/updated_20231207224439.html|特撮,戦隊,チンカスアニメ豚太郎,ペディオン,暇空,ようずん
+雑談|2023-11-14 22:57:11|http://saveniconicocomment.com/post/updated_20231207224920.html|ロシア,チンカスアニメ豚太郎,がる爺,キンマン,溝口,ハイロック,コラボ,ようずん
+雑談|2023-11-14 23:27:31|http://saveniconicocomment.com/post/updated_20231207225627.html|チンカスアニメ豚太郎,ようずん
+雑談|2023-11-15 22:52:54|http://saveniconicocomment.com/post/updated_20231207230105.html|ネトウヨ,ロシア,チンカスアニメ豚太郎,ペディオン,キンマン,コラボ,暇空,ようずん
+雑談|2023-11-16 21:42:51|http://saveniconicocomment.com/post/updated_20231207230246.html|
+雑談|2023-11-16 22:29:19|http://saveniconicocomment.com/post/updated_20231207230721.html|チンカスアニメ豚太郎,ペディオン,キンマン,バ会長,溝口,トキノミノル,ようずん
+雑談|2023-11-21 20:18:02|http://saveniconicocomment.com/post/updated_20231208023138.html|チンカスアニメ豚太郎,ペディオン,コニャック,キンマン,バ会長,溝口,トキノミノル,コラボ,ようずん
+ネットいじめおじさんに「ようずん」被害者の会|2023-11-21 20:49:09|http://saveniconicocomment.com/post/updated_20231208023503.html|チンカスアニメ豚太郎,がる爺,沢村,トキノミノル,コラボ,ようずん
+雑談|2023-11-22 21:09:28|http://saveniconicocomment.com/post/updated_20231208023953.html|ロシア,戦隊,チンカスアニメ豚太郎,ペディオン,トキノミノル,ようずん
+万博いらね|2023-11-22 21:41:21|http://saveniconicocomment.com/post/updated_20231208025135.html|ネトウヨ,ウクライナ,ロシア,チンカスアニメ豚太郎,ようずん
+雑談|2023-11-23 23:25:54|http://saveniconicocomment.com/post/updated_20231208030134.html|ロシア,特撮,チンカスアニメ豚太郎,靖国,ようずん
+プロレス情けない|2023-11-24 23:28:08|http://saveniconicocomment.com/post/updated_20231208030707.html|ウルトラマン,特撮,チンカスアニメ豚太郎,キンマン,コラボ
+プロレス情けない|2023-11-24 23:58:44|http://saveniconicocomment.com/post/updated_20231208031138.html|ウルトラマン,特撮,戦隊,チンカスアニメ豚太郎,キンマン,コラボ
+雑談|2023-12-06 22:33:07|http://saveniconicocomment.com/post/updated_20231208034427.html|チンカスアニメ豚太郎,キンマン,あたる,コラボ,暇空
+雑談|2023-12-06 23:02:19|http://saveniconicocomment.com/post/updated_20231208034854.html|ネトウヨ,ロシア,特撮,チンカスアニメ豚太郎,キンマン,コラボ,暇空,ようずん
+雑談|2023-12-07 23:09:46|http://saveniconicocomment.com/post/updated_20231208035159.html|チンカスアニメ豚太郎,がる爺,ペディオン,コニャック,ようずん
+政治雑談|2023-12-07 23:29:19|http://saveniconicocomment.com/post/updated_20231208040000.html|チンカスアニメ豚太郎,ネオ東条,東条,ペディオン,夏川,沢村,ようずん
+政治雑談|2023-12-08 00:02:54|http://saveniconicocomment.com/post/updated_20231208040725.html|ペディオン,沢村,ようずん
+政治雑談|2023-12-08 00:33:50|http://saveniconicocomment.com/post/updated_20231220193219.html|ペディオン,沢村,岡目,ようずん
+雑談|2023-12-09 23:41:41|http://saveniconicocomment.com/post/updated_20231220193322.html|ネトウヨ,ロシア,チンカスアニメ豚太郎,ペディオン,ようずん
+雑談|2023-12-11 20:09:53|http://saveniconicocomment.com/post/updated_20231220193430.html|ウルトラマン,チンカスアニメ豚太郎,ようずん
+雑談|2023-12-11 20:58:35|http://saveniconicocomment.com/post/updated_20231220193526.html|ネトウヨ,チンカスアニメ豚太郎,ペディオン,こうし
+雑談|2023-12-12 22:01:23|http://saveniconicocomment.com/post/updated_20231220193730.html|ロシア,チンカスアニメ豚太郎,ようずん
+雑談|2023-12-13 21:44:56|http://saveniconicocomment.com/post/updated_20231220194112.html|ネトウヨ,チンカスアニメ豚太郎,こうし,ようずん
+雑談|2023-12-16 23:34:28|http://saveniconicocomment.com/post/updated_20231220194259.html|ウクライナ,特撮,戦隊,チンカスアニメ豚太郎,ようずん
+雑談|2023-12-17 00:04:30|http://saveniconicocomment.com/post/updated_20231220194414.html|ウルトラマン,チンカスアニメ豚太郎,銃弾,ようずん
+雑談|2023-12-17 00:34:55|http://saveniconicocomment.com/post/updated_20231220194617.html|ネトウヨ,ロシア,チンカスアニメ豚太郎,ようずん
+雑談|2023-12-17 22:47:00|http://saveniconicocomment.com/post/updated_20231220194755.html|ネトウヨ,ウルトラマン,戦隊,チンカスアニメ豚太郎,みかん,溝口,ようずん
+雑談|2023-12-17 23:15:42|http://saveniconicocomment.com/post/updated_20231220194936.html|ネトウヨ,ウルトラマン,特撮,チンカスアニメ豚太郎,コラボ,暇空
+雑談|2023-12-18 21:58:24|http://saveniconicocomment.com/post/updated_20231220195136.html|ウクライナ,ロシア,ウルトラマン,チンカスアニメ豚太郎,コラボ,暇空,ようずん
+雑談|2023-12-18 22:28:03|http://saveniconicocomment.com/post/updated_20231220195304.html|ウルトラマン,特撮,戦隊,チンカスアニメ豚太郎,ペディオン,ようずん
+雑談|2023-12-19 22:13:43|http://saveniconicocomment.com/post/updated_20231220195442.html|ネトウヨ,チンカスアニメ豚太郎,靖国,城南,溝口,岡目インコ,岡目,こうし,ようずん
+雑談|2023-12-19 22:43:04|http://saveniconicocomment.com/post/updated_20231220195744.html|多様性,特撮,チンカスアニメ豚太郎,銃弾,ペディオン,キンマン,バ会長,城南,溝口,岡目,ようずん
+雑談|2023-12-19 23:16:40|http://saveniconicocomment.com/post/updated_20231220195628.html|ウルトラマン,特撮,戦隊,チンカスアニメ豚太郎,コニャック,ようずん
+雑談|2023-12-20 22:22:07|http://saveniconicocomment.com/post/updated_20231221033311.html|チンカスアニメ豚太郎,コニャック,こうし,コラボ,ようずん
+雑談|2023-12-20 22:55:01|http://saveniconicocomment.com/post/updated_20231221033438.html|ネトウヨ,ロシア,チンカスアニメ豚太郎,バ会長,ようずん
+雑談|2023-12-21 22:11:01|http://saveniconicocomment.com/post/updated_20231222165555.html|ネトウヨ,戦隊,チンカスアニメ豚太郎
+雑談|2023-12-21 22:39:49|http://saveniconicocomment.com/post/updated_20231222165732.html|ロシア,ウルトラマン,特撮,チンカスアニメ豚太郎,キンマン,コラボ,ようずん
+雑談|2023-12-22 22:41:59|http://saveniconicocomment.com/post/updated_20231223010808.html|ロシア,チンカスアニメ豚太郎,がる爺,銃弾,バ会長,ようずん
+雑談|2023-12-22 23:11:37|http://saveniconicocomment.com/post/updated_20231223011012.html|チンカスアニメ豚太郎,ようずん
+雑談|2023-12-23 22:16:19|http://saveniconicocomment.com/post/updated_20231223225208.html|ネトウヨ,ウクライナ,ロシア,ウルトラマン,特撮,戦隊,チンカスアニメ豚太郎,バ会長,靖国,ようずん
+雑談|2023-12-23 22:46:12|http://saveniconicocomment.com/post/updated_20231223231949.html|ネトウヨ,ロシア,チンカスアニメ豚太郎,銃弾,靖国,暇空
+雑談|2023-12-23 23:15:32|http://saveniconicocomment.com/post/updated_20231223234702.html|ネトウヨ,ウクライナ,ロシア,チンカスアニメ豚太郎
+雑談|2023-12-24 00:10:12|http://saveniconicocomment.com/post/updated_20231224004841.html|ウルトラマン,チンカスアニメ豚太郎,ようずん
+雑談|2023-12-25 00:04:06|http://saveniconicocomment.com/post/updated_20231225213435.html|ネトウヨ,特撮,戦隊
+雑談|2023-12-25 00:33:34|http://saveniconicocomment.com/post/updated_20231225213940.html|
+雑談|2023-12-25 22:28:24|http://saveniconicocomment.com/post/updated_20231225231046.html|ネトウヨ,チンカスアニメ豚太郎
+雑談|2023-12-25 22:40:58|http://saveniconicocomment.com/post/updated_20231225231511.html|ネトウヨ,チンカスアニメ豚太郎,コラボ
+雑談|2023-12-25 22:59:06|http://saveniconicocomment.com/post/updated_20231226144753.html|
+雑談|2023-12-26 22:42:42|http://saveniconicocomment.com/post/updated_20231226233004.html|ウクライナ,ロシア,ウルトラマン,戦隊,チンカスアニメ豚太郎,ようずん
+雑談|2023-12-27 23:31:27|http://saveniconicocomment.com/post/updated_20231228000613.html|
+雑談|2023-12-29 22:10:26|http://saveniconicocomment.com/post/updated_20231229224449.html|多様性,チンカスアニメ豚太郎
+あけおめ雑談|2024-01-05 23:05:37|http://saveniconicocomment.com/post/updated_20240106004507.html|ウクライナ,ロシア,チンカスアニメ豚太郎,ペディオン,ようずん
+あけおめ雑談|2024-01-05 23:35:14|http://saveniconicocomment.com/post/updated_20240106005050.html|ネトウヨ,ロシア,戦隊,チンカスアニメ豚太郎,ネオ東条,東条,ようずん
+政治雑談|2024-01-07 01:37:42|http://saveniconicocomment.com/post/updated_20240107082725.html|沢村
+政治雑談|2024-01-07 02:06:11|http://saveniconicocomment.com/post/updated_20240107053901.html|
+政治雑談|2024-01-07 22:23:28|http://saveniconicocomment.com/post/updated_20240107225433.html|ウルトラマン,チンカスアニメ豚太郎,コラボ,ようずん
+政治雑談|2024-01-07 22:50:15|http://saveniconicocomment.com/post/updated_20240107232702.html|ネトウヨ,ウクライナ,ロシア,ウルトラマン,特撮,チンカスアニメ豚太郎,コラボ,暇空,ようずん
+政治雑談|2024-01-07 23:46:18|http://saveniconicocomment.com/post/updated_20240108001845.html|チンカスアニメ豚太郎
+政治雑談|2024-01-08 00:12:44|http://saveniconicocomment.com/post/updated_20240108004446.html|ネトウヨ,ロシア,チンカスアニメ豚太郎,キンマン
+政治雑談|2024-01-08 00:40:22|http://saveniconicocomment.com/post/updated_20240108011221.html|
+政治雑談|2024-01-09 23:04:05|http://saveniconicocomment.com/post/updated_20240109234118.html|ネトウヨ,ロシア,ウルトラマン,チンカスアニメ豚太郎,ようずん
+政治雑談|2024-01-09 23:32:02|http://saveniconicocomment.com/post/updated_20240110000527.html|ネトウヨ,ウルトラマン,チンカスアニメ豚太郎
+政治雑談|2024-01-09 23:59:51|http://saveniconicocomment.com/post/updated_20240110003214.html|ネトウヨ,チンカスアニメ豚太郎,ようずん
+政治雑談|2024-01-10 00:28:01|http://saveniconicocomment.com/post/updated_20240110010033.html|ネトウヨ,ロシア,沢村,ようずん
+政治雑談|2024-01-10 00:56:25|http://saveniconicocomment.com/post/updated_20240110012902.html|ようずん
+政治雑談|2024-01-10 01:25:48|http://saveniconicocomment.com/post/updated_20240110015900.html|ウルトラマン,特撮
+政治雑談|2024-01-10 01:55:48|http://saveniconicocomment.com/post/updated_20240110022831.html|
+政治雑談|2024-01-10 02:24:57|http://saveniconicocomment.com/post/updated_20240110025914.html|ネトウヨ,ウクライナ,ロシア
+配信引退すっか|2024-01-11 22:57:32|http://saveniconicocomment.com/post/updated_20240111233038.html|ウルトラマン,特撮,チンカスアニメ豚太郎,溝口,コラボ,ようずん
+松本人志の件どう思う？|2024-01-11 23:26:15|http://saveniconicocomment.com/post/updated_20240111235828.html|チンカスアニメ豚太郎
+松本人志の件どう思う？|2024-01-11 23:54:17|http://saveniconicocomment.com/post/updated_20240112002653.html|多様性,ネトウヨ,チンカスアニメ豚太郎,コラボ,暇空,ようずん
+裏金脱税立件せず|2024-01-13 22:33:22|http://saveniconicocomment.com/post/updated_20240113232119.html|ウルトラマン
+裏金脱税立件せず|2024-01-13 23:00:36|http://saveniconicocomment.com/post/updated_20240113233148.html|チンカスアニメ豚太郎
+裏金脱税立件せず|2024-01-13 23:28:01|http://saveniconicocomment.com/post/updated_20240114000641.html|ロシア,チンカスアニメ豚太郎,ようずん
+裏金脱税立件せず|2024-01-13 23:56:08|http://saveniconicocomment.com/post/updated_20240114002807.html|ネトウヨ,コラボ,暇空,ようずん
+雑談|2024-01-14 00:24:24|http://saveniconicocomment.com/post/updated_20240114005656.html|暗殺,ウクライナ,ロシア,沢村,ようずん
+雑談|2024-01-14 00:52:27|http://saveniconicocomment.com/post/updated_20240114012535.html|ロシア,銃弾
+雑談|2024-01-14 22:32:18|http://saveniconicocomment.com/post/updated_20240114230356.html|ウルトラマン,特撮,戦隊,チンカスアニメ豚太郎
+雑談|2024-01-14 22:59:28|http://saveniconicocomment.com/post/updated_20240114233154.html|チンカスアニメ豚太郎,ようずん
+雑談|2024-01-14 23:27:12|http://saveniconicocomment.com/post/updated_20240115000327.html|ロシア,戦隊,チンカスアニメ豚太郎,コラボ
+雑談|2024-01-15 23:00:03|http://saveniconicocomment.com/post/updated_20240116043512.html|ネトウヨ,ロシア,ウルトラマン,戦隊,チンカスアニメ豚太郎
+雑談|2024-01-15 23:28:20|http://saveniconicocomment.com/post/updated_20240116045857.html|
+雑談|2024-01-16 22:31:02|http://saveniconicocomment.com/post/updated_20240116232432.html|ネトウヨ,ウルトラマン,チンカスアニメ豚太郎
+あけおめ雑談|2024-01-21 23:28:42|http://saveniconicocomment.com/post/updated_20240122000351.html|ウルトラマン,チンカスアニメ豚太郎,コラボ
+</script>
+
+<script>
+(function(){
+  // ── Parse data ──
+  const raw = document.getElementById('raw-data').textContent.trim();
+  const POSTS = raw.split('\n').filter(Boolean).map(line => {
+    const [title, dt, url, tagsStr] = line.split('|');
+    const tags = (tagsStr || '').split(',').filter(Boolean);
+    const date = new Date(dt.replace(' ', 'T') + '+09:00');
+    const cleanTitle = title.trim();
+    const cleanDt = dt.trim();
+    return {
+      title: cleanTitle,
+      dt: cleanDt,
+      url: url.trim(),
+      tags,
+      date,
+      summary: `${cleanTitle} の記録。${cleanDt} に保存された放送リンクです。${tags.length ? `関連タグ: ${tags.join('、')}` : '関連タグは未設定です。'}`,
+      summaryImage: ''
+    };
+  });
+
+  // Sort newest first
+  POSTS.sort((a, b) => b.date - a.date);
+
+  // ── Tag counts ──
+  const tagCount = {};
+  POSTS.forEach(p => p.tags.forEach(t => { tagCount[t] = (tagCount[t]||0) + 1; }));
+  const sortedTags = Object.keys(tagCount).sort((a, b) => tagCount[b] - tagCount[a]);
+
+  // ── State ──
+  let q = '';
+  let activeTags = new Set();
+
+  // ── DOM refs ──
+  const $list = document.getElementById('list');
+  const $tagCloud = document.getElementById('tagCloud');
+  const $search = document.getElementById('search');
+  const $clear = document.getElementById('clearBtn');
+  const $totalCount = document.getElementById('totalCount');
+  const $shownCount = document.getElementById('shownCount');
+  const $dateRange = document.getElementById('dateRange');
+  const $topBtn = document.getElementById('topBtn');
+
+  $totalCount.textContent = POSTS.length.toLocaleString();
+  if (POSTS.length){
+    const fmt = d => d.toISOString().slice(0,10).replace(/-/g,'.');
+    $dateRange.textContent = `${fmt(POSTS[POSTS.length-1].date)} → ${fmt(POSTS[0].date)}`;
+  }
+
+  // ── Build tag cloud ──
+  function buildTagCloud(){
+    $tagCloud.innerHTML = '';
+    sortedTags.forEach(name => {
+      const btn = document.createElement('button');
+      btn.className = 'tag' + (activeTags.has(name) ? ' active' : '');
+      btn.innerHTML = `<span>${escapeHtml(name)}</span><span class="count">${tagCount[name]}</span>`;
+      btn.addEventListener('click', () => {
+        if (activeTags.has(name)) activeTags.delete(name);
+        else activeTags.add(name);
+        buildTagCloud();
+        render();
+      });
+      $tagCloud.appendChild(btn);
+    });
+  }
+
+  // ── Render list ──
+  function render(){
+    const ql = q.toLowerCase().trim();
+    const filtered = POSTS.filter(p => {
+      if (activeTags.size){
+        for (const t of activeTags) if (!p.tags.includes(t)) return false;
+      }
+      if (ql){
+        const hay = (p.title + ' ' + p.tags.join(' ')).toLowerCase();
+        if (!hay.includes(ql)) return false;
+      }
+      return true;
+    });
+
+    $shownCount.textContent = filtered.length.toLocaleString();
+
+    if (!filtered.length){
+      $list.innerHTML = `<div class="empty">該当なし — 検索条件を変えてください</div>`;
+      return;
+    }
+
+    // Group by year
+    const byYear = {};
+    filtered.forEach(p => {
+      const y = p.date.getFullYear();
+      (byYear[y] = byYear[y] || []).push(p);
+    });
+    const years = Object.keys(byYear).sort((a,b) => b - a);
+
+    let html = '';
+    for (const y of years){
+      html += `<section class="year-section">
+        <header class="year-head">
+          <h2>${y}</h2>
+          <span class="y-count">${byYear[y].length}件</span>
+        </header>`;
+      for (const p of byYear[y]){
+        const md = p.dt.slice(5,10).replace('-','/');
+        const hm = p.dt.slice(11,16);
+        const titleHtml = highlight(p.title, ql);
+        const tagsHtml = p.tags.map(t => {
+          const cls = activeTags.has(t) ? 'p-tag highlight' : 'p-tag';
+          return `<span class="${cls}" data-tag="${escapeAttr(t)}">${escapeHtml(t)}</span>`;
+        }).join('');
+        const summaryImageHtml = p.summaryImage
+          ? `<img src="${escapeAttr(p.summaryImage)}" alt="">`
+          : `<span>summary<br>image</span>`;
+        html += `<article class="post">
+          <div class="p-date"><span class="md">${md}</span><span class="hm">${hm}</span></div>
+          <div class="p-body">
+            <p class="p-title"><a href="${escapeAttr(p.url)}" target="_blank" rel="noopener">${titleHtml}<span class="arrow">→</span></a></p>
+            ${tagsHtml ? `<div class="p-tags">${tagsHtml}</div>` : ''}
+          </div>
+          <div class="summary-pop" aria-hidden="true">
+            <div class="summary-image">${summaryImageHtml}</div>
+            <div class="summary-text"><b>SUMMARY</b>${escapeHtml(p.summary)}</div>
+          </div>
+        </article>`;
+      }
+      html += `</section>`;
+    }
+    $list.innerHTML = html;
+
+    // Wire post-tag clicks
+    $list.querySelectorAll('.p-tag').forEach(el => {
+      el.addEventListener('click', () => {
+        const t = el.dataset.tag;
+        if (activeTags.has(t)) activeTags.delete(t);
+        else activeTags.add(t);
+        buildTagCloud();
+        render();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    });
+  }
+
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function escapeAttr(s){ return escapeHtml(s); }
+  function highlight(s, q){
+    const safe = escapeHtml(s);
+    if (!q) return safe;
+    const re = new RegExp(escapeRe(q), 'gi');
+    return safe.replace(re, m => `<mark>${m}</mark>`);
+  }
+  function escapeRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+  // ── Wire up ──
+  $search.addEventListener('input', e => {
+    q = e.target.value;
+    $clear.hidden = !q;
+    render();
+  });
+  $clear.addEventListener('click', () => {
+    q = '';
+    $search.value = '';
+    $clear.hidden = true;
+    render();
+    $search.focus();
+  });
+
+  // Top button
+  window.addEventListener('scroll', () => {
+    $topBtn.classList.toggle('show', window.scrollY > 400);
+  }, { passive: true });
+  $topBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  // Initial render
+  buildTagCloud();
+  render();
+})();
+</script>
+
+</body>
+</html>

@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 import tracker
 from gui_app import (
     APP_ROLE_ENV,
+    DisappearedBroadcastUrlTab,
     TimeshiftTagEditorTab,
     TimeshiftLocalFilesTab,
     TimeshiftTab,
@@ -113,9 +114,11 @@ class TimeshiftMainWindow(QMainWindow):
         self.acquire_tab = TimeshiftTab()
         self.local_files_tab = TimeshiftLocalFilesTab()
         self.tag_editor_tab = TimeshiftTagEditorTab()
+        self.disappeared_url_tab = DisappearedBroadcastUrlTab()
         self.tabs.addTab(self.acquire_tab, "URLから取得")
         self.tabs.addTab(self.local_files_tab, "ローカル処理")
         self.tabs.addTab(self.tag_editor_tab, "タグ修正")
+        self.tabs.addTab(self.disappeared_url_tab, "消滅URL登録")
         self.setCentralWidget(self.tabs)
 
         status = QStatusBar()
