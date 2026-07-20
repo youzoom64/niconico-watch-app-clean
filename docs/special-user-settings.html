@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>スペシャルユーザー設定 取扱説明書</title>
+  <style>
+    :root{color-scheme:dark;--bg:#101016;--panel:#191923;--line:#343445;--text:#eeeef5;--muted:#aaaabd;--accent:#ff78b7;--blue:#62c9ff;--warn:#ffc96b}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:"Yu Gothic UI","Meiryo",sans-serif;line-height:1.75}main{max-width:1040px;margin:auto;padding:32px 22px 80px}
+    h1{font-size:2rem;border-bottom:2px solid var(--accent);padding-bottom:12px}h2{margin-top:42px;border-left:5px solid var(--accent);padding-left:12px}h3{color:var(--blue);margin-top:28px}a{color:var(--blue)}code{background:#292936;padding:.15em .4em;border-radius:4px}
+    .lead,.note,.warning{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px}.note{border-left:4px solid var(--blue)}.warning{border-left:4px solid var(--warn)}
+    table{width:100%;border-collapse:collapse;margin:14px 0 24px;background:var(--panel)}th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}th{background:#262634}ol,ul{padding-left:1.6em}
+    .toc{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:24px 0}.toc a{display:block;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:9px 12px;text-decoration:none}.toc a:hover{border-color:var(--accent)}
+    @media(max-width:650px){main{padding:20px 12px 60px}h1{font-size:1.55rem}table{font-size:.9rem}th,td{padding:7px}th:first-child{width:34%}}
+  </style>
+</head>
+<body><main>
+  <h1>スペシャルユーザー設定 取扱説明書</h1>
+  <p class="lead">特定のニコニコユーザーを登録し、その人がコメントした放送の保存、AI分析、HTML生成、自動反応を配信者ごとに設定する画面の説明書です。操作はすべてGUIから行えます。</p>
+
+  <nav class="toc"><a href="#register">登録・一覧</a><a href="#editor">編集画面</a><a href="#analysis">AI分析</a><a href="#reaction">AI反応</a><a href="#basic-reaction">基本反応</a><a href="#server">サーバー設定</a><a href="#broadcasters">配信者との紐付け</a><a href="#broadcaster-detail">配信者別設定</a><a href="#save">保存と有効化</a></nav>
+
+  <section id="register"><h2>スペシャルユーザーを登録する</h2><ol><li>メインGUIで「スペシャルユーザー」タブを開きます。</li><li>「スペシャルユーザーID または user URL」に数値IDかニコニコのユーザーページURLを入力します。</li><li>必要なら「名前」と「メモ」を入力します。</li><li>「登録/更新」を押します。</li></ol>
+  <p>名前を空欄にして数値IDを登録した場合は、取得できるときだけユーザー名が自動入力されます。同じユーザーIDをもう一度登録すると、その登録内容を更新します。</p>
+  <table><thead><tr><th>一覧の列</th><th>説明</th></tr></thead><tbody><tr><td>有効</td><td>チェックしたユーザーだけを検出対象にします。</td></tr><tr><td>ユーザーID</td><td>コメントと照合するニコニコのユーザーIDです。</td></tr><tr><td>名前</td><td>GUIや生成HTMLで使用する表示名です。</td></tr><tr><td>メモ</td><td>管理用の自由記入欄です。</td></tr><tr><td>更新日時</td><td>最後に設定を保存した日時です。</td></tr></tbody></table>
+  <ul><li>詳しい設定を開くには、一覧の対象行をダブルクリックします。</li><li>削除するには行を選択し、「選択削除」を押します。</li><li>削除すると、そのユーザーと配信者の紐付けやトリガー設定も削除されます。</li></ul></section>
+
+  <section id="editor"><h2>スペシャルユーザー編集画面</h2><p>左側でAIと反応方法を設定し、右側で検出対象となる配信者を設定します。最後に画面下部の「保存」を押すまで変更は確定しません。</p><table><thead><tr><th>基本情報</th><th>説明</th></tr></thead><tbody><tr><td>ユーザーID</td><td>編集中の対象IDです。</td></tr><tr><td>表示名</td><td>HTMLや管理画面で使う名前です。</td></tr><tr><td>サーバー設定</td><td>このユーザー専用HTMLの送信先を設定します。ボタンのON/OFFで現在の送信設定を確認できます。</td></tr></tbody></table></section>
+
+  <section id="analysis"><h2>AI分析</h2><p>保存されたコメントや放送情報から、そのユーザーについてまとめるAIを設定します。</p><table><thead><tr><th>項目</th><th>説明</th></tr></thead><tbody><tr><td>AI分析担当</td><td>Codex exec、ClaudeCode、Grok build、OpenAI API、Gemini APIから実行方法を選びます。</td></tr><tr><td>AI分析モデル</td><td>選んだ担当で使用するモデルです。</td></tr><tr><td>推論力</td><td>分析の深さです。高くすると一般に処理時間と利用量が増えます。</td></tr><tr><td>Codex resumeセッションID</td><td>既存のCodex分析セッションを継続するときにUUIDを入力します。新規なら空欄で構いません。</td></tr><tr><td>AI分析APIキー</td><td>選択したAPIが認証を必要とする場合に入力します。</td></tr></tbody></table></section>
+
+  <section id="reaction"><h2>AI反応</h2><p>対象ユーザーのコメントを検出した後、生成する返答の担当と送信間隔を設定します。</p><table><thead><tr><th>項目</th><th>説明</th></tr></thead><tbody><tr><td>AI反応担当 / モデル</td><td>返答を作るAIサービスとモデルです。</td></tr><tr><td>推論力</td><td>返答生成に使う推論の深さです。</td></tr><tr><td>Codex resumeセッションID</td><td>文脈を継続したいCodexセッションのUUIDです。</td></tr><tr><td>AI反応APIキー</td><td>選択したAPIに必要な認証キーです。</td></tr><tr><td>最大文字数</td><td>1回の反応に使える最大文字数です。</td></tr><tr><td>分割送信遅延</td><td>長文を複数回に分けて送るときの待ち時間です。</td></tr><tr><td>反応遅延</td><td>検出してから反応するまでの待ち時間です。</td></tr><tr><td>最大反応回数</td><td>1放送で反応する上限回数です。</td></tr></tbody></table></section>
+
+  <section id="basic-reaction"><h2>このユーザーに対する基本反応設定</h2><table><thead><tr><th>項目</th><th>説明</th></tr></thead><tbody><tr><td>基本反応設定を使う</td><td>このユーザー共通の反応設定を有効にします。</td></tr><tr><td>応答タイプ：定型メッセージ</td><td>登録済みの文章を使用します。定型文は1行につき1メッセージで入力します。</td></tr><tr><td>応答タイプ：AI生成</td><td>AIプロンプトを使って、その場のコメントに合う返答を生成します。</td></tr><tr><td>AIプロンプト</td><td>返答の立場、文体、長さ、禁止事項などを指定します。</td></tr><tr><td>無反応判断プロンプト</td><td>返答すべきでないコメントをAIに判断させる指示です。</td></tr></tbody></table>
+  <p class="note">配信者ごとの基本反応も設定されている場合は、右側の配信者別設定がその配信者での動作を決めます。</p></section>
+
+  <section id="server"><h2>サーバー設定</h2><p>「サーバー設定」ボタンから、このスペシャルユーザー用HTMLの公開先を設定します。</p><table><thead><tr><th>項目</th><th>説明</th></tr></thead><tbody><tr><td>HTMLサーバー送信</td><td>生成したHTMLの自動送信を有効にします。</td></tr><tr><td>投稿サーバーURL</td><td>HTMLや反応を受け取るサーバーのURLです。</td></tr><tr><td>投稿サーバーAPIキー</td><td>送信先の認証キーです。</td></tr><tr><td>HTMLベースURL</td><td>公開されたページの基準URLです。</td></tr></tbody></table><p class="warning">APIキーは第三者に見せたり、GitHubへ登録したりしないでください。公開しない場合はHTML送信をOFFにします。</p></section>
+
+  <section id="broadcasters"><h2>紐づいている配信者一覧</h2><p>スペシャルユーザーを、どの配信者の放送で探すかを指定します。</p><ol><li>「配信者ID / user URL / ch URL」に配信者ID、ユーザーURL、またはチャンネルURLを入力します。</li><li>名前が空欄なら「名前取得」を押します。</li><li>「配信者追加」を押します。</li><li>不要な配信者は一覧で選び、「選択削除」を押します。</li></ol>
+  <p>数値ユーザーIDのスペシャルユーザーでは、「フォロー中を一括登録」を押すと、そのユーザーがフォローしている配信者をまとめて追加できます。</p><p class="note">配信者を追加しただけでは、編集画面全体の保存は完了していません。最後に下部の「保存」を押してください。</p></section>
+
+  <section id="broadcaster-detail"><h2>配信者ごとの反応設定</h2><p>紐づいた配信者の行をダブルクリックすると、その配信者だけで使う反応とトリガーワードを編集できます。</p><table><thead><tr><th>項目</th><th>説明</th></tr></thead><tbody><tr><td>有効</td><td>この配信者の放送を検出対象にします。</td></tr><tr><td>この配信者向け基本反応を使う</td><td>ユーザー共通設定ではなく、この配信者専用の反応を使います。</td></tr><tr><td>応答タイプ</td><td>定型メッセージかAI生成を選びます。</td></tr><tr><td>定型メッセージ</td><td>1行につき1メッセージで入力します。</td></tr><tr><td>AIプロンプト</td><td>この配信者の放送だけで使う返答指示です。</td></tr><tr><td>最大反応数</td><td>この配信者の1放送における反応上限です。</td></tr><tr><td>反応遅延</td><td>検出してから反応するまでの秒数です。</td></tr></tbody></table>
+  <h3>トリガーワード</h3><p>特定の言葉がコメントに含まれたときだけ、指定の反応を行う設定です。</p><table><thead><tr><th>項目</th><th>説明</th></tr></thead><tbody><tr><td>トリガー名</td><td>管理しやすい設定名です。</td></tr><tr><td>キーワード</td><td>検出する文字列です。</td></tr><tr><td>アクション</td><td>定型文かAI生成を選びます。</td></tr><tr><td>応答内容</td><td>定型文、またはAIへ渡す内容です。</td></tr><tr><td>有効</td><td>このトリガーを使用するか指定します。</td></tr></tbody></table></section>
+
+  <section id="save"><h2>保存と有効化</h2><ol><li>一覧画面でスペシャルユーザーの「有効」にチェックします。</li><li>編集画面で対象配信者を追加し、その配信者も有効にします。</li><li>必要なAI設定、反応設定、サーバー設定を入力します。</li><li>画面下部の「保存」を押します。</li></ol>
+  <p>「キャンセル」を押すと、編集画面で行った未保存の変更は破棄されます。既に保存済みの放送HTMLは、設定を変えただけでは作り直されません。</p>
+  <h3>最初におすすめする設定</h3><ol><li>ユーザーIDを登録して「有効」をオンにします。</li><li>対象配信者を1人だけ追加して動作を確認します。</li><li>最初は最大反応回数を<code>1</code>にします。</li><li>自動投稿が不要なら基本反応設定とHTMLサーバー送信をOFFにします。</li><li>保存後、確認タブとログで検出結果を確認します。</li></ol></section>
+</main></body></html>
