@@ -639,6 +639,12 @@ def install_table_copy_menu(table: QTableView) -> None:
         if broadcaster_id:
             url = broadcaster_live_programs_url(broadcaster_id)
             menu.addSeparator()
+            stop_recording_sender = getattr(table, "_stop_broadcaster_recording_sender", None)
+            if callable(stop_recording_sender):
+                stop_recording = menu.addAction("この配信者の録画を停止")
+                stop_recording.triggered.connect(
+                    lambda _=False, target=broadcaster_id, sender=stop_recording_sender: sender(target)
+                )
             if bool(getattr(table, "_broadcaster_timeshift_enabled", False)):
                 open_timeshift = menu.addAction("取得可能なタイムシフトをすべて取得")
 
@@ -2390,6 +2396,11 @@ class SpecialUserEditorDialog(QDialog):
         self.broadcaster_table.setModel(self.broadcaster_model)
         stabilize_table_scroll(self.broadcaster_table)
         setattr(self.broadcaster_table, "_broadcaster_timeshift_enabled", True)
+        setattr(
+            self.broadcaster_table,
+            "_stop_broadcaster_recording_sender",
+            self.stop_broadcaster_recording,
+        )
         self.broadcaster_table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.broadcaster_table.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         self.broadcaster_table.setAlternatingRowColors(True)
@@ -4842,6 +4853,25 @@ class BroadcasterMonitorTab(QWidget):
         tracker.delete_monitored_broadcaster(broadcaster_id)
         self.reload()
         show_status(self, f"配信者監視削除: {broadcaster_id}")
+
+    def stop_broadcaster_recording(self, broadcaster_id: str) -> None:
+        jobs = [
+            row
+            for row in tracker.running_live_recording_jobs()
+            if str(row.get("broadcaster_id") or "").strip() == broadcaster_id
+        ]
+        if not jobs:
+            show_status(self, f"録画停止対象なし: {broadcaster_id}")
+            return
+        stopped_lvs: list[str] = []
+        for job in jobs:
+            lv = str(job.get("lv") or "").strip()
+            if not lv:
+                continue
+            tracker.stop_recording_for_broadcast(lv, reason="broadcaster_context_menu")
+            stopped_lvs.append(lv)
+        self.reload()
+        show_status(self, f"録画停止: {broadcaster_id} / {','.join(stopped_lvs)}", "INFO")
 
     def open_broadcaster_editor(self, index: QModelIndex) -> None:
         row = self.broadcaster_model.row_at(index.row())

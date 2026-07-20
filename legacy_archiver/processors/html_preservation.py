@@ -204,7 +204,10 @@ def render_page_tag_block(
         f"{safe_json(normalized)}</script>\n"
         '<style>.person-jump-target{font-size:1.35em;font-weight:900;scroll-margin-top:80px}.person-jump-target small{font-size:.62em;color:#ff6fa8}'
         'html.archive-dark{filter:invert(1) hue-rotate(180deg);background:#fff}'
-        'html.archive-dark img,html.archive-dark video,html.archive-dark canvas,html.archive-dark svg,html.archive-dark .emoji,html.archive-dark .emoji-no-invert,html.archive-dark a{filter:invert(1) hue-rotate(180deg)!important}'
+        'html.archive-dark img,html.archive-dark video,html.archive-dark canvas,html.archive-dark svg,html.archive-dark .emoji,html.archive-dark .emoji-no-invert{filter:invert(1) hue-rotate(180deg)!important}'
+        'html.archive-dark a{filter:invert(1) hue-rotate(180deg)!important}'
+        'html.archive-dark .ranking-item a,html.archive-dark .special-user-ranking-link{color:#72d7ff!important}'
+        'html.archive-dark .ranking-item a:visited,html.archive-dark .special-user-ranking-link:visited{color:#d7a8ff!important}'
         'html.archive-dark a img,html.archive-dark a video,html.archive-dark a canvas,html.archive-dark a svg,html.archive-dark a .emoji,html.archive-dark a .emoji-no-invert{filter:none!important}'
         'html.archive-dark .ai-fullbody-backdrop img{filter:invert(1) hue-rotate(180deg) drop-shadow(0 22px 32px rgba(30,20,20,.20))!important}'
         'html.archive-dark #archive-page-tags-view{filter:invert(1) hue-rotate(180deg)!important}'

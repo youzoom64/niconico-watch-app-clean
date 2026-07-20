@@ -13,7 +13,7 @@ from archive_db import (
     load_transcript_payload,
     update_broadcast_data,
 )
-from utils import find_account_directory
+from utils import find_account_directory, get_user_nickname_with_cache
 from datetime import datetime, timezone, timedelta
 
 try:
@@ -63,7 +63,15 @@ def process(pipeline_data):
             raise Exception(f"放送データDBが見つかりません: {lv_value}")
         registered_broadcast_dir = str(broadcast_data.get('broadcast_directory_path') or '').strip()
         if registered_broadcast_dir:
-            broadcast_dir = registered_broadcast_dir
+            try:
+                same_account_root = os.path.commonpath([
+                    os.path.abspath(registered_broadcast_dir),
+                    os.path.abspath(account_dir),
+                ]) == os.path.abspath(account_dir)
+            except ValueError:
+                same_account_root = False
+            if same_account_root:
+                broadcast_dir = registered_broadcast_dir
         transcript_data = load_transcript_payload(lv_value)
         comments_data = load_comments_payload(lv_value)
         ranking_data = load_ranking_payload(lv_value, comments_data)
@@ -377,16 +385,21 @@ def prepare_comment_ranking(ranking_data, account_dir, lv_value, comments_data=N
         
         for rank_data in ranking_rows:
             user_id = rank_data.get('user_id', '')
-            user_name = html.escape(rank_data.get('user_name', ''))
+            raw_user_name = str(rank_data.get('user_name', '') or '').strip()
+            if not raw_user_name and str(user_id).isdigit():
+                raw_user_name = get_user_nickname_with_cache(str(user_id)) or str(user_id)
+            if not raw_user_name:
+                raw_user_name = str(user_id)
+            user_name = html.escape(raw_user_name)
             
             # スペシャルユーザーページ確認
             special_user_dir = os.path.join(account_dir, f"special_user_{user_id}")
             detail_file = os.path.join(special_user_dir, f"{user_id}_{lv_value}_detail.html")
             
             if os.path.exists(detail_file):
-                user_name_display = f'<a href="../special_user_{user_id}/{user_id}_{lv_value}_detail.html" target="_blank">{user_name}</a>'
+                special_user_url = f'../special_user_{user_id}/{user_id}_{lv_value}_detail.html'
             else:
-                user_name_display = user_name
+                special_user_url = ''
             
             user_url = ""
             if not rank_data.get('anonymity', False) and user_id:
@@ -400,8 +413,9 @@ def prepare_comment_ranking(ranking_data, account_dir, lv_value, comments_data=N
             comment_ranking.append({
                 'rank': rank_data.get('rank', 0),
                 'user_id': user_id,
-                'user_name': user_name_display,
+                'user_name': user_name,
                 'user_url': user_url,
+                'special_user_url': special_user_url,
                 'icon_url': f"https://secure-dcdn.cdn.nimg.jp/nicoaccount/usericon/{user_id[:-4]}/{user_id}.jpg",
                 'comment_count': rank_data.get('comment_count', 0),
                 'first_comment': html.escape(rank_data.get('first_comment', '')),
@@ -803,6 +817,7 @@ def build_virtual_timeline_script(lv_value):
     script = r'''
     <script>
     (function () {
+        try {
         const dataNode = document.getElementById("nico-virtual-timeline-data");
         if (!dataNode) return;
         let timelineData = {};
@@ -811,7 +826,9 @@ def build_virtual_timeline_script(lv_value):
         } catch (error) {
             console.error("仮想タイムラインデータを読み込めません", error);
         }
-        dataNode.textContent = "";
+        if (!timelineData || typeof timelineData !== "object") timelineData = {};
+        if (!Array.isArray(timelineData.timeline1)) timelineData.timeline1 = [];
+        if (!Array.isArray(timelineData.timeline2)) timelineData.timeline2 = [];
 
         const windowSize = __WINDOW_SIZE__;
         const bufferBefore = __BUFFER_BEFORE__;
@@ -940,6 +957,7 @@ def build_virtual_timeline_script(lv_value):
                 };
             }
         };
+        dataNode.textContent = "";
 
         function init() {
             render(0, true);
@@ -972,6 +990,10 @@ def build_virtual_timeline_script(lv_value):
                 window.open("https://live.nicovideo.jp/watch/" + liveValue + "#" + seconds, "_blank");
             }
         });
+        } catch (error) {
+            window.NicoVirtualTimelineError = String(error && (error.stack || error.message) || error);
+            console.error("仮想タイムライン初期化に失敗しました", error);
+        }
     })();
     </script>
 '''
@@ -1800,6 +1822,7 @@ def generate_complete_html(
                             <div class="ranking-summary">
                                 <small>初コメント ({user['first_comment_time']}): {user['first_comment']}</small><br>
                                 <small>最終コメント ({user['last_comment_time']}): {user['last_comment']}</small>
+                                {f'<br><a href="{user["special_user_url"]}" target="_blank" class="special-user-ranking-link">スペシャルユーザーページへ</a>' if user.get('special_user_url') else ''}
                             </div>
                             <div class="user-comments" id="comments-{user['user_id']}"
                                 style="display:none; margin-top:10px; max-height:300px; overflow-y:auto; background:#f8f9fa; padding:10px; border-radius:5px;">

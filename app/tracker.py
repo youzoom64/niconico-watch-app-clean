@@ -1225,7 +1225,7 @@ def broadcaster_archive_step_defaults(lv: str) -> tuple[str, dict[str, bool]]:
         "step09_screenshot_generator": "thumbnail_10sec_enabled",
         "step10_comment_processor": "ranking_enabled",
         "step12_html_generator": "timeline_enabled",
-        "step15_lolipop_uploader": "html_server_enabled",
+        "step15_lolipop_uploader": "html_upload_enabled",
     }
     for step_name, column in mapping.items():
         if column in values and values[column] is not None:
@@ -7462,6 +7462,9 @@ def apply_monitored_broadcaster_feature_overrides(lv: str, legacy_config: dict[s
         text = str(row[key] or "").strip()
         if text:
             ai_prompts[key] = text
+    legacy_config.setdefault("upload_settings", {})["enable_auto_upload"] = bool(
+        row["html_upload_enabled"]
+    )
     if not int(row["custom_settings_enabled"] or 0):
         return legacy_config
 

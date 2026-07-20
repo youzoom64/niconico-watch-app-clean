@@ -112,7 +112,16 @@ def collect_broadcast_data(account_dir, broadcaster_id):
             lv_value = str(data.get('lv_value') or '').strip()
             if not lv_value:
                 continue
-            broadcast_dir = str(data.get('broadcast_directory_path') or os.path.join(account_dir, lv_value))
+            broadcast_dir = str(data.get('broadcast_directory_path') or '').strip()
+            try:
+                same_account_root = bool(broadcast_dir) and os.path.commonpath([
+                    os.path.abspath(broadcast_dir),
+                    os.path.abspath(account_dir),
+                ]) == os.path.abspath(account_dir)
+            except ValueError:
+                same_account_root = False
+            if not same_account_root:
+                broadcast_dir = os.path.join(account_dir, lv_value)
             html_file = find_html_file(broadcast_dir, lv_value, account_dir, data)
             if not html_file:
                 continue
