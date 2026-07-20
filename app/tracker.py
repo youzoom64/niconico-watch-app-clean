@@ -12941,6 +12941,7 @@ def check_lv_for_special_users(conn: sqlite3.Connection, row: sqlite3.Row, confi
                     "elapsed_seconds": time.monotonic() - started,
                 },
             )
+            conn.commit()
             return {"lv": lv, "result": "special_user_linked", "matches": len(matches), "linked": len(linked_user_ids)}
 
         shutil.rmtree(temp_path.parent, ignore_errors=True)
