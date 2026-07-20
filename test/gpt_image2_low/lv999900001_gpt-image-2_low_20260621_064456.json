@@ -1,9 +1,0 @@
-{
-  "model": "gpt-image-2",
-  "quality": "low",
-  "size": "1024x1024",
-  "prompt_file": "F:\\Niconico\\niconico-watch-app\\test\\gpt_image2_low\\prompt.txt",
-  "image_file": "F:\\Niconico\\niconico-watch-app\\test\\gpt_image2_low\\lv999900001_gpt-image-2_low_20260621_064456.png",
-  "bytes": 1243974,
-  "source": "b64_json"
-}

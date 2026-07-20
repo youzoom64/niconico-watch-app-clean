@@ -19,6 +19,9 @@ tmp/
 lab/
 target/
 test/
+tests/
+special_user_step11_demo.html
+AGENTS.md
 legacy_archiver/
 !legacy_archiver/
 legacy_archiver/*
