@@ -59,10 +59,12 @@ DEFAULT_TARGET_ROOT = NICONICO_ROOT / "target"
 DEFAULT_RECORDING_ACCOUNT_ID = "51610839"
 DEFAULT_CHARACTER1_NAME = "ニニちゃん"
 DEFAULT_CHARACTER1_IMAGE_URL = "https://raw.githubusercontent.com/youzoom64/niconico-character-icons/main/assets/characters/nini.png"
+DEFAULT_CHARACTER1_FULLBODY_IMAGE_URL = "https://raw.githubusercontent.com/youzoom64/niconico-character-icons/main/assets/characters/nini_fullbody.png"
 DEFAULT_CHARACTER2_NAME = "ココちゃん"
 DEFAULT_AI_REACTION_PROMPT = "次のニコニコ生放送コメントへの短い反応を作ってください。"
 DEFAULT_AI_REACTION_SKIP_PROMPT = "返事しない方がよい場合は、replyにSKIPを返してください。"
 DEFAULT_CHARACTER2_IMAGE_URL = "https://raw.githubusercontent.com/youzoom64/niconico-character-icons/main/assets/characters/koko.png"
+DEFAULT_CHARACTER2_FULLBODY_IMAGE_URL = "https://raw.githubusercontent.com/youzoom64/niconico-character-icons/main/assets/characters/koko_fullbody.png"
 SUNO_MODELS_DOC_URL = "https://docs.sunoapi.org/suno-api/generate-music"
 DEFAULT_SUNO_MODELS = ["V5_5", "V5", "V4_5PLUS", "V4_5ALL", "V4_5", "V4"]
 _TRACKER_DRIVER: webdriver.Chrome | None = None
@@ -632,8 +634,10 @@ class Config:
     ndgr_python_exe: str
     character1_name: str
     character1_image_url: str
+    character1_fullbody_image_url: str
     character2_name: str
     character2_image_url: str
+    character2_fullbody_image_url: str
     summary_prompt: str
     summary_chunk_size: int
     summary_chunk_prompt: str
@@ -1249,41 +1253,16 @@ def existing_recording_video_paths_by_lv(lvs: list[str]) -> dict[str, list[Path]
         return result
 
     video_suffixes = {".mp4", ".mkv", ".webm", ".flv", ".ts"}
+    candidates: dict[str, list[Path]] = {lv: [] for lv in normalized}
     for lv in normalized:
-        recorder_candidates = [
-            path
-            for path in DEFAULT_SLNICO_RECORDING_ROOT.rglob(f"{lv}*")
-            if path.is_file() and path.suffix.lower() in video_suffixes
-        ] if DEFAULT_SLNICO_RECORDING_ROOT.is_dir() else []
-        if recorder_candidates:
-            selected = max(
-                recorder_candidates,
-                key=lambda path: (
-                    path.suffix.lower() == ".mp4",
-                    path.stat().st_mtime,
-                    path.stat().st_size,
-                ),
-            )
-            result[lv] = [selected]
-            postprocess_log(
-                lv,
-                "local_video_resolve",
-                "INFO",
-                f"SlNicoLiveRec保存先を優先使用: {selected}",
-            )
-        else:
-            postprocess_log(
-                lv,
-                "local_video_resolve",
-                "WARN",
-                f"{DEFAULT_SLNICO_RECORDING_ROOT} に動画がないためDB登録パスへフォールバック",
+        if DEFAULT_SLNICO_RECORDING_ROOT.is_dir():
+            candidates[lv].extend(
+                path
+                for path in DEFAULT_SLNICO_RECORDING_ROOT.rglob(f"{lv}*")
+                if path.is_file() and path.suffix.lower() in video_suffixes
             )
 
-    fallback_lvs = [lv for lv in normalized if not result[lv]]
-    if not fallback_lvs:
-        return result
-
-    placeholders = ", ".join("?" for _ in fallback_lvs)
+    placeholders = ", ".join("?" for _ in normalized)
     with connect() as conn:
         rows = conn.execute(
             f"""
@@ -1292,7 +1271,7 @@ def existing_recording_video_paths_by_lv(lvs: list[str]) -> dict[str, list[Path]
             WHERE lv IN ({placeholders})
             ORDER BY lv, segment_index, id
             """,
-            fallback_lvs,
+            normalized,
         ).fetchall()
         target_rows = conn.execute(
             f"""
@@ -1300,46 +1279,49 @@ def existing_recording_video_paths_by_lv(lvs: list[str]) -> dict[str, list[Path]
             FROM recording_jobs
             WHERE lv IN ({placeholders})
             """,
-            fallback_lvs,
+            normalized,
         ).fetchall()
 
-    seen_paths: set[str] = set()
     for row in rows:
         lv = str(row["lv"] or "").strip().lower()
         for key in ("target_path", "source_path"):
             path = Path(str(row[key] or "").strip())
-            if not path.is_file():
-                continue
-            resolved_key = str(path.resolve()).casefold()
-            if resolved_key not in seen_paths:
-                seen_paths.add(resolved_key)
-                result.setdefault(lv, []).append(path)
-            break
+            if path.is_file() and path.suffix.lower() in video_suffixes:
+                candidates.setdefault(lv, []).append(path)
 
     for row in target_rows:
         lv = str(row["lv"] or "").strip().lower()
-        if result.get(lv):
-            continue
         target_dir = Path(str(row["target_dir"] or "").strip())
         if not target_dir.is_dir():
             continue
-        for path in sorted(target_dir.rglob(f"{lv}*")):
-            if not path.is_file() or path.suffix.lower() not in video_suffixes:
-                continue
-            resolved_key = str(path.resolve()).casefold()
-            if resolved_key in seen_paths:
-                continue
-            seen_paths.add(resolved_key)
-            result.setdefault(lv, []).append(path)
-    for lv in fallback_lvs:
+        candidates.setdefault(lv, []).extend(
+            path
+            for path in target_dir.rglob(f"{lv}*")
+            if path.is_file() and path.suffix.lower() in video_suffixes
+        )
+
+    suffix_priority = {".mp4": 5, ".mkv": 4, ".webm": 3, ".flv": 2, ".ts": 1}
+    for lv in normalized:
+        by_recording: dict[str, Path] = {}
+        for path in candidates.get(lv, []):
+            recording_key = path.stem.casefold()
+            current = by_recording.get(recording_key)
+            if current is None or suffix_priority.get(path.suffix.lower(), 0) > suffix_priority.get(
+                current.suffix.lower(), 0
+            ):
+                by_recording[recording_key] = path
+        result[lv] = sorted(
+            by_recording.values(),
+            key=lambda path: (path.stem.casefold(), path.suffix.casefold()),
+        )
         if result[lv]:
-            for path in result[lv]:
-                postprocess_log(
-                    lv,
-                    "local_video_resolve",
-                    "INFO",
-                    f"DB登録パスを使用: {path}",
-                )
+            postprocess_log(
+                lv,
+                "local_video_resolve",
+                "INFO",
+                f"同一LVの録画区間を全件使用: files={len(result[lv])}",
+                {"paths": [str(path) for path in result[lv]]},
+            )
         else:
             postprocess_log(
                 lv,
@@ -7344,10 +7326,12 @@ def build_legacy_archiver_config(config: Config | None = None) -> dict[str, Any]
             or "配信終了後の振り返りとして、以下の内容について話し合います:",
             "character1_name": config.character1_name or DEFAULT_CHARACTER1_NAME,
             "character1_image_url": config.character1_image_url or DEFAULT_CHARACTER1_IMAGE_URL,
+            "character1_fullbody_image_url": config.character1_fullbody_image_url or DEFAULT_CHARACTER1_FULLBODY_IMAGE_URL,
             "character1_image_flip": False,
             "character1_personality": config.character1_personality or "ボケ役で標準語を話す明るい女の子",
             "character2_name": config.character2_name or DEFAULT_CHARACTER2_NAME,
             "character2_image_url": config.character2_image_url or DEFAULT_CHARACTER2_IMAGE_URL,
+            "character2_fullbody_image_url": config.character2_fullbody_image_url or DEFAULT_CHARACTER2_FULLBODY_IMAGE_URL,
             "character2_image_flip": False,
             "character2_personality": config.character2_personality or "ツッコミ役で関西弁を話すしっかり者の女の子",
             "conversation_turns": int(config.conversation_turns or 5),
@@ -7495,6 +7479,14 @@ def apply_monitored_broadcaster_feature_overrides(lv: str, legacy_config: dict[s
         "music_prompt",
         "intro_conversation_prompt",
         "outro_conversation_prompt",
+        "character1_name",
+        "character1_image_url",
+        "character1_fullbody_image_url",
+        "character1_personality",
+        "character2_name",
+        "character2_image_url",
+        "character2_fullbody_image_url",
+        "character2_personality",
     ):
         text = str(row[key] or "").strip()
         if text:
@@ -8152,6 +8144,7 @@ def run_finalize_pipeline_for_lv(
     except Exception as exc:
         mark_stage_failed(lv, "archive_steps", f"{type(exc).__name__}: {exc}")
         result["legacy_archiver_error"] = f"{type(exc).__name__}: {exc}"
+        raise
     else:
         with connect() as conn:
             update_postprocess_job(conn, lv, "archive_steps", "done")
@@ -10223,10 +10216,14 @@ def save_monitored_broadcaster_details(broadcaster_id: str, values: dict[str, An
         "ai_reaction_api_key",
         "character1_name",
         "character1_image_url",
+        "character1_fullbody_image_url",
         "character1_image_flip",
+        "character1_personality",
         "character2_name",
         "character2_image_url",
+        "character2_fullbody_image_url",
         "character2_image_flip",
+        "character2_personality",
         "post_server_url",
         "post_server_api_key",
         "faster_whisper_model",
@@ -10682,8 +10679,10 @@ def load_config() -> Config:
         ndgr_python_exe=str(raw.get("ndgr_python_exe", ROOT / ".venv" / "Scripts" / "python.exe")),
         character1_name=str(raw.get("character1_name", DEFAULT_CHARACTER1_NAME)),
         character1_image_url=str(raw.get("character1_image_url", DEFAULT_CHARACTER1_IMAGE_URL)),
+        character1_fullbody_image_url=str(raw.get("character1_fullbody_image_url", DEFAULT_CHARACTER1_FULLBODY_IMAGE_URL)),
         character2_name=str(raw.get("character2_name", DEFAULT_CHARACTER2_NAME)),
         character2_image_url=str(raw.get("character2_image_url", DEFAULT_CHARACTER2_IMAGE_URL)),
+        character2_fullbody_image_url=str(raw.get("character2_fullbody_image_url", DEFAULT_CHARACTER2_FULLBODY_IMAGE_URL)),
         summary_prompt=str(
             raw.get(
                 "summary_prompt",
@@ -11019,10 +11018,14 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         "ai_conversation_use_codex": "INTEGER NOT NULL DEFAULT 0",
         "character1_name": "TEXT",
         "character1_image_url": "TEXT",
+        "character1_fullbody_image_url": "TEXT",
         "character1_image_flip": "INTEGER NOT NULL DEFAULT 0",
+        "character1_personality": "TEXT",
         "character2_name": "TEXT",
         "character2_image_url": "TEXT",
+        "character2_fullbody_image_url": "TEXT",
         "character2_image_flip": "INTEGER NOT NULL DEFAULT 0",
+        "character2_personality": "TEXT",
         "post_server_url": "TEXT",
         "post_server_api_key": "TEXT",
         "faster_whisper_model": "TEXT",

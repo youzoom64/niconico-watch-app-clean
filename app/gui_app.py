@@ -4343,10 +4343,14 @@ class MonitoredBroadcasterEditorDialog(QDialog):
         )
         self.character1_name = QLineEdit(str(broadcaster.get("character1_name") or config.character1_name or tracker.DEFAULT_CHARACTER1_NAME))
         self.character1_image_url = QLineEdit(str(broadcaster.get("character1_image_url") or config.character1_image_url or tracker.DEFAULT_CHARACTER1_IMAGE_URL))
+        self.character1_fullbody_image_url = QLineEdit(str(broadcaster.get("character1_fullbody_image_url") or config.character1_fullbody_image_url or tracker.DEFAULT_CHARACTER1_FULLBODY_IMAGE_URL))
+        self.character1_personality = QLineEdit(str(broadcaster.get("character1_personality") or config.character1_personality or "ボケ役で標準語を話す明るい女の子"))
         self.character1_image_flip = QCheckBox("ニニちゃん画像を左右反転")
         self.character1_image_flip.setChecked(bool(broadcaster.get("character1_image_flip", 0)))
         self.character2_name = QLineEdit(str(broadcaster.get("character2_name") or config.character2_name or tracker.DEFAULT_CHARACTER2_NAME))
         self.character2_image_url = QLineEdit(str(broadcaster.get("character2_image_url") or config.character2_image_url or tracker.DEFAULT_CHARACTER2_IMAGE_URL))
+        self.character2_fullbody_image_url = QLineEdit(str(broadcaster.get("character2_fullbody_image_url") or config.character2_fullbody_image_url or tracker.DEFAULT_CHARACTER2_FULLBODY_IMAGE_URL))
+        self.character2_personality = QLineEdit(str(broadcaster.get("character2_personality") or config.character2_personality or "ツッコミ役で関西弁を話すしっかり者の女の子"))
         self.character2_image_flip = QCheckBox("ココちゃん画像を左右反転")
         self.character2_image_flip.setChecked(bool(broadcaster.get("character2_image_flip", 0)))
 
@@ -4460,9 +4464,13 @@ class MonitoredBroadcasterEditorDialog(QDialog):
         char_layout = QVBoxLayout(char_box)
         self.add_field(char_layout, "キャラ1名", self.character1_name)
         self.add_field(char_layout, "キャラ1画像URL", self.character1_image_url)
+        self.add_field(char_layout, "キャラ1全身画像URL", self.character1_fullbody_image_url)
+        self.add_field(char_layout, "キャラ1性格", self.character1_personality)
         char_layout.addWidget(self.character1_image_flip)
         self.add_field(char_layout, "キャラ2名", self.character2_name)
         self.add_field(char_layout, "キャラ2画像URL", self.character2_image_url)
+        self.add_field(char_layout, "キャラ2全身画像URL", self.character2_fullbody_image_url)
+        self.add_field(char_layout, "キャラ2性格", self.character2_personality)
         char_layout.addWidget(self.character2_image_flip)
         right_layout.addWidget(char_box)
 
@@ -4661,9 +4669,13 @@ class MonitoredBroadcasterEditorDialog(QDialog):
             "outro_conversation_prompt": self.outro_conversation_prompt.toPlainText().strip(),
             "character1_name": self.character1_name.text().strip(),
             "character1_image_url": self.character1_image_url.text().strip(),
+            "character1_fullbody_image_url": self.character1_fullbody_image_url.text().strip(),
+            "character1_personality": self.character1_personality.text().strip(),
             "character1_image_flip": int(self.character1_image_flip.isChecked()),
             "character2_name": self.character2_name.text().strip(),
             "character2_image_url": self.character2_image_url.text().strip(),
+            "character2_fullbody_image_url": self.character2_fullbody_image_url.text().strip(),
+            "character2_personality": self.character2_personality.text().strip(),
             "character2_image_flip": int(self.character2_image_flip.isChecked()),
             "post_server_url": self.post_server_url.text().strip(),
             "post_server_api_key": self.post_server_api_key.text(),
@@ -5622,10 +5634,14 @@ class SettingsTab(QWidget):
         self.character1_name.setPlaceholderText("ニニちゃん")
         self.character1_image_url = QLineEdit()
         self.character1_image_url.setPlaceholderText("ニニちゃん画像URL")
+        self.character1_fullbody_image_url = QLineEdit()
+        self.character1_fullbody_image_url.setPlaceholderText("ニニちゃん全身画像URL")
         self.character2_name = QLineEdit()
         self.character2_name.setPlaceholderText("ココちゃん")
         self.character2_image_url = QLineEdit()
         self.character2_image_url.setPlaceholderText("ココちゃん画像URL")
+        self.character2_fullbody_image_url = QLineEdit()
+        self.character2_fullbody_image_url.setPlaceholderText("ココちゃん全身画像URL")
         self.summary_prompt = QTextEdit()
         self.summary_prompt.setPlaceholderText("Step05 要約プロンプト")
         self.summary_prompt.setMinimumHeight(90)
@@ -5805,10 +5821,14 @@ class SettingsTab(QWidget):
         character_layout.addWidget(self.character1_name)
         character_layout.addWidget(QLabel("ニニちゃん 画像URL"))
         character_layout.addWidget(self.character1_image_url)
+        character_layout.addWidget(QLabel("ニニちゃん 全身画像URL"))
+        character_layout.addWidget(self.character1_fullbody_image_url)
         character_layout.addWidget(QLabel("ココちゃん 名前"))
         character_layout.addWidget(self.character2_name)
         character_layout.addWidget(QLabel("ココちゃん 画像URL"))
         character_layout.addWidget(self.character2_image_url)
+        character_layout.addWidget(QLabel("ココちゃん 全身画像URL"))
+        character_layout.addWidget(self.character2_fullbody_image_url)
         character_layout.addWidget(QLabel("ニニちゃん 性格"))
         character_layout.addWidget(self.character1_personality)
         character_layout.addWidget(QLabel("ココちゃん 性格"))
@@ -5872,7 +5892,7 @@ class SettingsTab(QWidget):
 
         image_box = QGroupBox("Step07 抽象画像生成")
         image_layout = QVBoxLayout(image_box)
-        image_layout.addWidget(QLabel("OpenAI APIキー"))
+        image_layout.addWidget(QLabel("OpenAI APIキー（抽象画像生成に使用）"))
         image_layout.addWidget(self.openai_api_key)
         image_layout.addWidget(QLabel("画像生成モデル"))
         image_layout.addWidget(self.image_generation_model)
@@ -5888,6 +5908,12 @@ class SettingsTab(QWidget):
 
         codex_box = QGroupBox("AIテキスト生成")
         codex_layout = QVBoxLayout(codex_box)
+        text_ai_description = QLabel(
+            "Step 5の放送要約、Step 8の開始前・終了後のニニココ会話、"
+            "Step 11のスペシャルユーザー分析に使用します。"
+        )
+        text_ai_description.setWordWrap(True)
+        codex_layout.addWidget(text_ai_description)
         codex_layout.addWidget(self.codex_exec_enabled)
         codex_layout.addWidget(QLabel("Google APIキー"))
         codex_layout.addWidget(self.google_api_key)
@@ -5992,8 +6018,10 @@ class SettingsTab(QWidget):
             self.set_combo_value(self.concat_nvenc_preset, config.concat_nvenc_preset or "p4")
             self.character1_name.setText(config.character1_name)
             self.character1_image_url.setText(config.character1_image_url)
+            self.character1_fullbody_image_url.setText(config.character1_fullbody_image_url)
             self.character2_name.setText(config.character2_name)
             self.character2_image_url.setText(config.character2_image_url)
+            self.character2_fullbody_image_url.setText(config.character2_fullbody_image_url)
             self.summary_prompt.setPlainText(config.summary_prompt)
             self.summary_chunk_size.setValue(int(config.summary_chunk_size or 100000))
             self.summary_chunk_prompt.setPlainText(config.summary_chunk_prompt)
@@ -6180,8 +6208,10 @@ class SettingsTab(QWidget):
                 "concat_nvenc_preset": str(self.concat_nvenc_preset.currentText() or "p4").strip() or "p4",
                 "character1_name": self.character1_name.text().strip() or tracker.DEFAULT_CHARACTER1_NAME,
                 "character1_image_url": self.character1_image_url.text().strip(),
+                "character1_fullbody_image_url": self.character1_fullbody_image_url.text().strip(),
                 "character2_name": self.character2_name.text().strip() or tracker.DEFAULT_CHARACTER2_NAME,
                 "character2_image_url": self.character2_image_url.text().strip(),
+                "character2_fullbody_image_url": self.character2_fullbody_image_url.text().strip(),
                 "summary_prompt": self.summary_prompt.toPlainText().strip(),
                 "summary_chunk_size": int(self.summary_chunk_size.value()),
                 "summary_chunk_prompt": self.summary_chunk_prompt.toPlainText().strip(),

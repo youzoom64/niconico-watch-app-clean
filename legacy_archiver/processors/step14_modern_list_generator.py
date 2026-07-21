@@ -876,12 +876,13 @@ h1{{font-family:"Reggae One",system-ui,sans-serif;font-weight:700;font-size:30px
 .year-head .y-count{{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--mute)}}
 .post{{position:relative;display:grid;grid-template-columns:78px 120px 1fr;gap:16px;padding:14px 0;border-bottom:1px dashed var(--line);transition:background .15s ease}}
 .post:hover{{background:rgba(255,255,255,.035);z-index:5}}
-.post.history-deleted{{position:relative;overflow:hidden;isolation:isolate;background:rgba(150,45,65,.12);box-shadow:inset 3px 0 0 rgba(255,125,145,.55);animation:history-deleted-heartbeat 2.4s ease-in-out infinite}}
-.post.history-deleted::before{{content:"消されてしまった放送ページ\\00a0消されてしまった放送ページ\\00a0";position:absolute;top:50%;left:0;z-index:0;width:max-content;color:rgba(185,185,190,.30);font-size:clamp(48px,8vw,112px);font-weight:900;letter-spacing:.08em;line-height:1.05;white-space:nowrap;filter:blur(8px);text-shadow:0 0 32px rgba(210,210,215,.36);pointer-events:none;user-select:none;animation:history-deleted-marquee 18s linear infinite;will-change:transform}}
+.post.history-deleted{{position:relative;overflow:visible;isolation:isolate;background:rgba(150,45,65,.12);box-shadow:inset 3px 0 0 rgba(255,125,145,.55);animation:history-deleted-heartbeat 2.4s ease-in-out infinite}}
+.post.history-deleted::before{{content:none}}
+.history-deleted-marquee{{position:absolute!important;inset:0;z-index:0!important;overflow:hidden;pointer-events:none;user-select:none;-webkit-mask-image:linear-gradient(to right,transparent 0,#000 10%,#000 90%,transparent 100%);mask-image:linear-gradient(to right,transparent 0,#000 10%,#000 90%,transparent 100%)}}
+.history-deleted-marquee canvas{{display:block;width:100%;height:100%}}
 .post.history-deleted>*{{position:relative;z-index:1}}
 .post.history-deleted:hover{{background:rgba(150,45,65,.28)}}
-@keyframes history-deleted-heartbeat{{0%,100%{{background:rgba(150,45,65,.10);box-shadow:inset 3px 0 0 rgba(255,125,145,.42),0 0 0 rgba(255,95,125,0)}}14%{{background:rgba(190,45,70,.34);box-shadow:inset 4px 0 0 rgba(255,145,165,.9),0 0 20px rgba(255,75,110,.34)}}28%{{background:rgba(150,45,65,.12);box-shadow:inset 3px 0 0 rgba(255,125,145,.5),0 0 2px rgba(255,95,125,.06)}}43%{{background:rgba(175,45,68,.23);box-shadow:inset 3px 0 0 rgba(255,135,155,.72),0 0 11px rgba(255,75,110,.20)}}62%{{background:rgba(150,45,65,.10);box-shadow:inset 3px 0 0 rgba(255,125,145,.42),0 0 0 rgba(255,95,125,0)}}}}
-@keyframes history-deleted-marquee{{from{{transform:translate(0,-50%)}}to{{transform:translate(-50%,-50%)}}}}
+@keyframes history-deleted-heartbeat{{0%,28%,62%,100%{{background:transparent;box-shadow:inset 3px 0 0 transparent,0 0 0 transparent}}14%{{background:rgba(190,45,70,.34);box-shadow:inset 4px 0 0 rgba(255,145,165,.9),0 0 20px rgba(255,75,110,.34)}}43%{{background:rgba(175,45,68,.23);box-shadow:inset 3px 0 0 rgba(255,135,155,.72),0 0 11px rgba(255,75,110,.20)}}}}
 @media(max-width:600px){{.post{{grid-template-columns:60px 84px 1fr;gap:10px}}}}
 .p-date{{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--mute);line-height:1.4;padding-top:2px}}
 .p-date .md{{color:var(--ink);font-weight:500;font-size:13px}}
@@ -1134,6 +1135,32 @@ window.addEventListener('scroll',()=>topBtn.classList.toggle('show',window.scrol
 topBtn.addEventListener('click',()=>window.scrollTo({{top:0,behavior:'smooth'}}));
 renderSpecialLinks();
 render();
+const deletedMarqueeCanvases=new Set();
+const decorateDeletedPosts=()=>document.querySelectorAll('.post.history-deleted:not(:has(.history-deleted-marquee))').forEach(post=>{{
+  const clip=document.createElement('div');
+  clip.className='history-deleted-marquee';
+  const canvas=document.createElement('canvas');
+  clip.appendChild(canvas);
+  deletedMarqueeCanvases.add(canvas);
+  post.prepend(clip);
+}});
+decorateDeletedPosts();
+new MutationObserver(decorateDeletedPosts).observe(document.body,{{childList:true,subtree:true}});
+const drawDeletedMarquees=time=>{{
+  deletedMarqueeCanvases.forEach(canvas=>{{
+    if(!canvas.isConnected){{deletedMarqueeCanvases.delete(canvas);return}}
+    const box=canvas.getBoundingClientRect(),dpr=devicePixelRatio||1,w=box.width,h=box.height;
+    if(!w||!h)return;
+    if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){{canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr)}}
+    const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+    const size=Math.min(112,Math.max(48,innerWidth*.08)),text='消されてしまった放送ページ　';
+    ctx.font=`900 ${{size}}px sans-serif`;ctx.textBaseline='middle';ctx.fillStyle='rgba(185,185,190,.30)';ctx.filter='blur(8px)';
+    const spacing=.72,unit=ctx.measureText(text).width*spacing,offset=-((time*.055)%unit);
+    for(let base=offset-unit;base<w+unit;base+=unit){{let x=base;for(const ch of text){{const cw=ctx.measureText(ch).width,cx=x+cw*spacing/2;if(cx>=0&&cx<=w){{const angle=Math.PI*(cx/w-.5),sx=Math.max(0,Math.cos(angle)),mx=w/2+(w/2)*Math.sin(angle);ctx.save();ctx.translate(mx,h/2);ctx.scale(sx,1);ctx.globalAlpha=.35+.65*sx;ctx.fillText(ch,-cw/2,0);ctx.restore()}}x+=cw*spacing}}}}
+  }});
+  requestAnimationFrame(drawDeletedMarquees);
+}};
+requestAnimationFrame(drawDeletedMarquees);
 </script>
 </body>
 </html>"""
